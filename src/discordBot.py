@@ -2,7 +2,6 @@ import os
 import json
 import random
 from multiprocessing import Process
-from emoji import EMOJI_ALIAS_UNICODE as EMOJIS
 
 from discord.ext import commands
 import discord

@@ -1,3 +1,5 @@
+from . import GameExceptions
+
 class CommandInfo:
     """
     An object for storing information about a Command for a DiscordGame
@@ -122,7 +124,52 @@ class CommandResultMessage:
         self.text = text
         self.image = image
         self.send_both = send_both
+ 
+class CommandResultPrompt:
+
+    def __init__(self, player, title, func_name, emojis = None, dm = False, count = 1, key = None, description = None, result_message = None, timeout = 30.0):
         
+        if not isinstance(count, int):
+            raise GameExceptions.DiscordGameError(f"count for CommandResultPrompt must be of type 'int': type(count) = {type(count)}")
+        if count < 1:
+            raise GameExceptions.DiscordGameError(f"count for CommandResultPrompt must be at least 1: count = {count}")
+        
+        #key defaults to the player name
+        if key is None:
+            key = player.name
+            
+        #default message description
+        if description is None:
+            description = f"Please Select {count} of the following: {emojis}"
+            
+        if result_message is None:
+            result_message = f"You Chose: "
+    
+        if count >= len(emojis):
+            raise GameExceptions.DiscordGameError(f"count must be > the number of emoji options: emojis = {emojis} | count = {count}")
+            
+        if dm and count != 1:
+            raise GameExceptions.DiscordGameError(f"DM Prompts can only allow the user to choose 1")
+    
+        if len(set(emojis)) < len(emojis):
+            raise GameExceptions.DiscordGameError(f"emoji list must contain no duplicates")
+    
+        self.player = player
+        self.key = key
+        self.func_name = func_name        
+        
+        if dm:
+            self.channel = player.discord_channel
+        else:
+            self.channel = None
+        
+        self.title = title
+        self.description = description
+        self.result_message = result_message
+        self.emojis = emojis
+        self.count = count
+        self.timeout = timeout
+               
 class Player:
     """
     An object for storing information about a Player for a DiscordGame

@@ -1,4 +1,5 @@
 import discord
+import asyncio
 import traceback
 from discord.ext import commands
 
@@ -28,7 +29,7 @@ class GameRunner:
         self.make_kill_command()
         
         self.bot.run(self.token)
-        
+            
     def make_command(self, command):
                         
         async def process_command_result(game_channel, command_result):
@@ -61,6 +62,55 @@ class GameRunner:
             else:
                 raise games.common.GameExceptions.DiscordGameError(f"result from commmand '{command.name}' not recognized: {type(command_result)}")
         
+        async def prompt_player(prompt : games.common.GameClasses.CommandResultPrompt, default_channel):
+            
+            vote_box = discord.Embed(title = prompt.title, description = prompt.description)
+            
+            channel = prompt.channel
+            if channel is None:
+                channel = default_channel
+            
+            message = await channel.send(embed= vote_box)
+            for emoji in prompt.emojis:
+                await message.add_reaction(emoji)
+                
+            def check(reaction, user):
+                return (user == prompt.player.discord_channel) and (reaction.message.id == message.id)
+                
+            choices = set()
+            while len(choices) < prompt.count:
+                
+                try:
+                    reaction, user = await self.bot.wait_for("reaction_add", timeout = prompt.timeout, check = check)
+                    if prompt.channel is None:
+                        await message.remove_reaction(reaction, user)
+                except asyncio.TimeoutError:
+                    timeout_box = discord.Embed(title = prompt.title, description = "Timed out! Please manually make selection with game commands")
+                    await message.edit(embed = timeout_box)
+                    
+                if reaction.emoji in prompt.emojis:
+                
+                    if reaction.emoji in choices:
+                        choices.remove(reaction.emoji)
+                    else:
+                        choices.add(reaction.emoji)
+                        
+                    if len(choices) < prompt.count:
+                        current_choices = choices
+                        if current_choices == set():
+                            current_choices = "None"
+                        choice_box = discord.Embed(title = prompt.title, description = f"Current selection: {current_choices}")
+                        await message.edit(embed = choice_box)
+                        
+            if len(choices) == 1:
+                desc = f"{prompt.result_message} {list(choices)[0]}"
+            else:
+                desc = f"{prompt.result_message} {choices}"
+            recorded_box = discord.Embed(title = prompt.title, description = desc)
+            await message.edit(embed = recorded_box)
+            
+            return (prompt.key, choices)
+        
         async def new_function(ctx, *args, **kwargs):
         
             try:
@@ -92,8 +142,55 @@ class GameRunner:
                 #run the command
                 result = self.game.__getattribute__(command.name)(*args, **kwargs)
                 
-                #parse the messages returned by the command
-                await process_command_result(game_channel, result)
+                #seperate out the prompts from the messages
+                if isinstance(result, (list, tuple)):
+                    prompts = [res for res in result if isinstance(res, games.common.GameClasses.CommandResultPrompt)]
+                    messages = [res for res in result if not isinstance(res, games.common.GameClasses.CommandResultPrompt)]
+                elif isinstance(result, games.common.GameClasses.CommandResultPrompt):
+                    prompts = [result]
+                    messages = None
+                else:    
+                    prompts = []
+                    messages = result
+                                
+                #send the messages returned by the command
+                await process_command_result(game_channel, messages)
+                
+                #keep looping intil there are no more game prompts
+                while len(prompts) != 0:
+                
+                    #send out the CommandResultPrompts to the respective players
+                
+                    #validate that the field "func_name" matches for all the CommandResultPrompts and that "func_name" is a function in the game
+                    func_name = prompts[0].func_name
+                
+                    for prompt in prompts:
+                        if func_name != prompt.func_name:
+                            raise games.common.GameExceptions.DiscordGameError(f"Two of the follow up functions for the CommandResultPrompts don't match: {func_name} and {prompte.func_name}")
+                        
+                    if func_name not in dir(self.game):
+                        raise games.common.GameExceptions.DiscordGameError(f"The Game has not field by the name '{func_name}'. Cannot use this as a follow up functon")
+                
+                    #prompt the players and get their results
+                    prompt_results = await asyncio.gather(*[prompt_player(prompt, game_channel) for prompt in prompts])
+                    prompt_results_dict = {pr[0] : pr[1] for pr in prompt_results}
+                
+                    #call the followup function
+                    result = self.game.__getattribute__(func_name)(prompt_results_dict)
+                    
+                    #seperate out the prompts from the messages
+                    if isinstance(result, (list, tuple)):
+                        prompts = [res for res in result if isinstance(res, games.common.GameClasses.CommandResultPrompt)]
+                        messages = [res for res in result if not isinstance(res, games.common.GameClasses.CommandResultPrompt)]
+                    else:
+                        prompts = []
+                        messages = result
+                                
+                    #send the messages returned by the command
+                    await process_command_result(game_channel, messages)
+                    
+                    
+                
                                 
             except games.common.GameExceptions.DiscordGameIllegalMove as e:
                 await ctx.channel.send(f"Illegal Move: {e}")

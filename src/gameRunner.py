@@ -30,36 +30,36 @@ class GameRunner:
         self.bot.run(self.token)
         
     def make_command(self, command):
-        
-        def process_command_result(command_result):
+                        
+        async def process_command_result(game_channel, command_result):
+            
+            if command_result is None:
+                pass
                 
-            if isinstance(command_result, str):
-                return {"content" : command_result}
+            elif isinstance(command_result, str):
+                await game_channel.send(command_result)
                 
             elif isinstance(command_result, games.common.GameClasses.CommandResultMessage):
                 
-                return_dict = {}
+                destination =  command_result.destination
+                if destination is None:
+                    destination = game_channel                
+                
+                kwargs = {}
                 
                 if (self.use_images) and (command_result.image is not None):
-                    return_dict["file"] = discord.File(command_result.image)
-                
+                    kwargs["file"] = discord.File(command_result.image)
+                    
                 if (not self.use_images) or (command_result.image is None) or (command_result.send_both):
-                    return_dict["content"] = command_result.text
-                   
-                if command_result.destination is not None:
-                   
-                    return_dict["destination"] = command_result.destination
+                    kwargs["content"] = command_result.text
                     
-                return return_dict
-                    
-            elif isinstance(command_result, (list, tuple)):
-                return [process_command_result(cr) for cr in command_result]
-                    
-            elif command_result is None:
-                return None
+                await destination.send(**kwargs)
+                
+            elif isinstance(command_result,(list,tuple)):
+                [await process_command_result(game_channel, cr) for cr in command_result]
                 
             else:
-                return {"content" : f"result from commmand '{command.name}' not recognized: {type(command_result)}"}
+                raise games.common.GameExceptions.DiscordGameError(f"result from commmand '{command.name}' not recognized: {type(command_result)}")
         
         async def new_function(ctx, *args, **kwargs):
         
@@ -93,22 +93,8 @@ class GameRunner:
                 result = self.game.__getattribute__(command.name)(*args, **kwargs)
                 
                 #parse the messages returned by the command
-                messages = process_command_result(result)
-
-                if messages is None:
-                    pass
-                    
-                elif isinstance(messages, dict):
-                    destination = messages.pop("destination", game_channel)
-                    await destination.send(**messages)
-                    
-                elif isinstance(messages, list):
-                    for msg in messages:
-                        destination = msg.pop("destination", game_channel)
-                        await destination.send(**msg)
-                else:
-                    raise games.common.GameExceptions.DiscordGameError("Reached Theoretically Impossible State???")
-                
+                await process_command_result(game_channel, result)
+                                
             except games.common.GameExceptions.DiscordGameIllegalMove as e:
                 await ctx.channel.send(f"Illegal Move: {e}")
                 
@@ -166,7 +152,7 @@ class GameRunner:
                         
                 except:
                     pass
-                                
+        
         new_command = commands.Command(new_function, name=command.name, help=command.help_message)
         
         self.bot.add_command(new_command)             

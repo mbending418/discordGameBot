@@ -1,2 +1,3 @@
 resources/temp*
 resources/settings.json
+*__pycache__*

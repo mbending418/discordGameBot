@@ -122,7 +122,7 @@ class GameBoard():
         create_board(self.temp_dir, self.avalon_resources_folder, self.player_count, mission_results)
         
     def generate_mission_info(self):
-        return [f"Mission #{m+1} | player_count = {count} | Fails required: {self.number_fails_required(m)} | {self.results[m]}" for m, count in enumerate(self.get_mission_counts())]
+        return [f"Mission #{m+1} | Player Count = {count} | Fails Required: {self.number_fails_required(m)} | {self.results[m]}" for m, count in enumerate(self.get_mission_counts())]
     
     def advance_vote_track(self):
         self.vote_track += 1

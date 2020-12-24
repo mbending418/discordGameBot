@@ -1,6 +1,7 @@
 import os
 import shutil
 import random
+from emoji import EMOJI_ALIAS_UNICODE as EMOJIS
 
 from .board import GameBoard
 from .players import AvalonPlayer
@@ -172,7 +173,14 @@ class Avalon(DiscordGame):
             "enable_message" : "Emojis Enabled for messages from the Game!",
             "disable_message" : "Emojis Disabled for messages from the Game!",
             "default" : True
-        }       
+        },
+
+        "button_prompts" : {
+            "description" : "Enable using Button Prompts perform in game actions",
+            "enable_message" : "Button Prompts Enabled! (Now most in game actions will be controlled via Emoji Buttons)",
+            "disable_message" : "Button Prompts Disabled!",
+            "default" : True
+        }
     
     }
     
@@ -194,6 +202,31 @@ class Avalon(DiscordGame):
     
     }
     
+    _option_emojis = {
+        
+        EMOJIS[":one:"] : 1,
+        EMOJIS[":two:"] : 2,
+        EMOJIS[":three:"] : 3,
+        EMOJIS[":four:"] : 4,
+        EMOJIS[":five:"] : 5,
+        EMOJIS[":six:"] : 6,
+        EMOJIS[":seven:"] : 7,
+        EMOJIS[":eight:"] : 8,
+        EMOJIS[":nine:"] : 9,
+        EMOJIS[":ten:"] : 10,
+        EMOJIS[":white_check_mark:"] : "yes",
+        EMOJIS[":x:"] : "no"
+    
+    }
+    
+    _yes_no_emojis = [EMOJIS[":white_check_mark:"], EMOJIS[":x:"]]
+    _number_emojis = [EMOJIS[f":{key}:"] for key in ["one","two","three","four","five","six","seven","eight", "nine", "ten"]]
+    
+    _team_prompt_timeout = 300.0 #Give them 5 min to pick a team
+    _vote_prompt_timeout = 300.0 
+    _mission_prompt_timeout = 300.0
+    _stab_prompt_timeout = 300.0
+    
     def __init__(self, debug):
         self.debug = debug
     
@@ -210,10 +243,13 @@ class Avalon(DiscordGame):
         self.winning_team = None
         self.temp_dir = utils.generate_temp_dir(TEMP_BASE)
         
+        self.lock_voting = False
+        
         self.enable_mission_log = self._all_enable_rules["mission_log"]["default"]
         self.enable_vote_log = self._all_enable_rules["vote_log"]["default"]
         self.enable_auto_next = self._all_enable_rules["auto_next"]["default"]
         self.enable_emojis = self._all_enable_rules["emojis"]["default"]
+        self.enable_button_prompts = self._all_enable_rules["button_prompts"]["default"]
     
     def validate_player_name(self, player_name):
     
@@ -307,6 +343,8 @@ class Avalon(DiscordGame):
         self.on_mission = set()
         
         self.winning_team = None
+        
+        self.lock_voting = False
     
     def get_player_info(self, player):
     
@@ -354,6 +392,10 @@ class Avalon(DiscordGame):
         else:
         
             raise GameExceptions.DiscordGameError("Game in bad game state!")
+    
+    ################################
+    #Normal Game Progress Functions#
+    ################################
     
     def set_up_game(self):
     
@@ -523,6 +565,14 @@ class Avalon(DiscordGame):
         self.on_mission = set()
         message.append(self.get_help_message())
         
+        ##############################################
+        #Create the CommandResultPrompt if neccessary#
+        ##############################################
+        
+        #add a CommandResultPrompt if playing with "Button Prompts Enabled"
+        if self.enable_button_prompts:
+            message.append(self.create_team_select_prompt(starting_player))
+        
         return message
 
     def start_vote(self):
@@ -545,8 +595,18 @@ class Avalon(DiscordGame):
         #Send each player a message telling them to vote and add public info to message#
         ################################################################################
 
-        message = [player.create_message_for(text = f"{player.name}: Vote on the proposed Mission! [command: 'vote approve' or 'vote reject']") for player in self.get_players_in_registry()]    
-        message.append(self.get_public_player_info())        
+        message = []
+        #only DM players if button prompts is disabled
+        if not self.enable_button_prompts:
+        
+            dm_message = f"Vote on the proposed Mission!\n"
+            dm_message += f"     Team Leader: {self.find_team_leader().name}\n"
+            dm_message += f"     Team: {[player.name for player in self.on_mission]}\n"
+            dm_message += f"     Vote Track: {self.game_board.vote_track}\n"
+            dm_message += f"     [command: 'vote approve' or 'vote reject']"
+        
+            message += [player.create_message_for(text = f"{player.name}: {dm_message}") for player in self.get_players_in_registry()]    
+            message.append(self.get_public_player_info())        
         
         ################################################################
         #Move to 'voting', add the help message, and return the message#
@@ -554,6 +614,28 @@ class Avalon(DiscordGame):
   
         self.state = "voting"
         message.append(self.get_help_message())
+        
+        ###############################################
+        #Create the CommandResultPrompts if neccessary#
+        ###############################################
+        
+        if self.enable_button_prompts:
+            title = f"Vote to Approve or Reject the Mission\n"
+            title += f"     Team Leader: {self.find_team_leader().name}\n"
+            title += f"     Team: {[player.name for player in self.on_mission]}\n"
+            title += f"     Vote Track: {self.game_board.vote_track}"
+            description = f"Approve: {self._yes_no_emojis[0]} \n Reject: {self._yes_no_emojis[1]}"
+            result_message = f"You chose:"
+        
+            for player in self.get_players_in_registry():
+                message.append(GameClasses.CommandResultPrompt(player = player,
+                                                               title = f"{player.name}:\n{title}",
+                                                               func_name = "process_vote_prompt",
+                                                               emojis = self._yes_no_emojis,
+                                                               dm = True,
+                                                               description = description,
+                                                               result_message = result_message,
+                                                               timeout = self._vote_prompt_timeout))
         
         return message
     
@@ -630,13 +712,43 @@ class Avalon(DiscordGame):
             #reset the vote track
             self.game_board.reset_vote_track()
             
-            #send a message to each on mission player telling them to vote
-            message += [player.create_message_for(text = f"{player.name}: Choose pass or fail for the Mission! [command: 'mission pass' or 'mission fail']") for player in self.on_mission]
+            #send a message to each on mission player telling them to vote but only if button prompts are enabled
+            if not self.enable_button_prompts:
+                dm_message = f"Choose pass or fail for the Mission!\n"
+                dm_message += f"   Team: {[player.name for player in self.on_mission]}\n"
+                dm_message += f"   Fails Required: {self.game_board.number_fails_required(self.game_board.current_mission)}\n"
+                dm_message += f"   [command: 'mission pass' or 'mission fail']"
+                
+                message += [player.create_message_for(text = f"{player.name}: {dm_message}") for player in self.on_mission]
             
             #move to next phase
             self.state = "mission"
             message += self.game_board.generate_board()
             message.append(self.get_help_message())
+            
+            ###############################################
+            #Create the CommandResultPrompts if neccessary#
+            ###############################################
+            
+            if self.enable_button_prompts:
+        
+                title = "Vote to Pass or Fail the Mission\n"
+                title += f"     Team Leader: {self.find_team_leader().name}\n"
+                title += f"     Team: {[player.name for player in self.on_mission]}\n"
+                title += f"     Fails Required: {self.game_board.number_fails_required(self.game_board.current_mission)}\n"
+                description = f"Pass: {self._yes_no_emojis[0]} \n Fail: {self._yes_no_emojis[1]}"
+                result_message = f"You chose:"
+        
+                for player in self.on_mission:
+                    message.append(GameClasses.CommandResultPrompt(player = player,
+                                                       title = f"{player.name}:\n{title}",
+                                                       func_name = "process_mission_prompt",
+                                                       emojis = self._yes_no_emojis,
+                                                       dm = True,
+                                                       description = description,
+                                                       result_message = result_message,
+                                                       timeout = self._mission_prompt_timeout))
+            
             return message
         
         else:
@@ -708,7 +820,7 @@ class Avalon(DiscordGame):
                 else:
                     next_leader.public_info[0] = self.get_message_symbol("leader")
                 
-                #DM the Team Leader
+                #DM the Team Leader but only if button prompts are disabled
                 team_leader_message = next_leader.create_message_for(f"{next_leader.name}: You are the Team Leader! Choose {self.game_board.get_current_mission_count()} players for your Mission! [command: 'choose <player_name>']" )
                 message.append(team_leader_message)
                 
@@ -717,6 +829,15 @@ class Avalon(DiscordGame):
                 message += self.game_board.generate_board()
                 message.append(self.get_public_player_info())
                 message.append(self.get_help_message())
+                
+                ##############################################
+                #Create the CommandResultPrompt if neccessary#
+                ##############################################
+                
+                #add a CommandResultPrompt if playing with "Button Prompts Enabled"
+                if self.enable_button_prompts:
+                    message.append(self.create_team_select_prompt(next_leader))
+                
                 return message        
     
     def go_on_mission(self, message = None):
@@ -861,6 +982,44 @@ class Avalon(DiscordGame):
                 message += self.game_board.generate_board()
                 message.append(self.get_public_player_info())
                 message.append(self.get_help_message())
+                
+                ##############################################
+                #Create the CommandResultPrompt if neccessary#
+                ##############################################
+                
+                #add a CommandResultPrompt if playing with "Button Prompts Enabled"
+                if self.enable_button_prompts:
+                
+                    #find the assassin
+                    assassin_player = None
+                    for player in self.get_players_in_registry():
+                        if player.has_role("assassin"):
+                            if assassin_player is None:
+                                assassin_player = player
+                            else:
+                                raise GameExceptions.DiscordGameError(f"Somehow there is more than one Assassin: {player.name} & {assassin_player.name}")                         
+                
+                    emojis = self._number_emojis[:self.game_board.player_count]
+        
+                    title = [f"Assassin: Please Try to Stab Merlin:"]
+                    title += [f"{player_name} : {emoji}" for player_name, emoji in zip(self.player_order, emojis)]
+                    title = "\n".join(title)
+        
+                    description = "Stab Merlin!"
+        
+                    result_message = "You chose the following player to stab:"
+        
+                    message.append(GameClasses.CommandResultPrompt(player = assassin_player,
+                                               title = title,
+                                               func_name = "process_stab_prompt",
+                                               emojis = emojis,
+                                               dm = False,
+                                               count = 1,
+                                               key = "stab_prompt",
+                                               description = description,
+                                               result_message = result_message,
+                                               timeout = self._stab_prompt_timeout))
+                                
                 return message
                 
             else:
@@ -931,16 +1090,279 @@ class Avalon(DiscordGame):
             message += self.game_board.generate_board()
             message.append(self.get_public_player_info())
             message.append(self.get_help_message())
+            
+            ##############################################
+            #Create the CommandResultPrompt if neccessary#
+            ##############################################
+            
+            #add a CommandResultPrompt if playing with "Button Prompts Enabled"
+            if self.enable_button_prompts:
+                message.append(self.create_team_select_prompt(next_leader))
+            
             return message      
+    
+    def process_stab(self, assassin_name, guess):
+        players = self.get_players_in_registry()       
+        
+        #find merlin
+        merlins = [player.name for player in players if player.character.name == "Merlin"]
+        if len(merlins) == 0:
+            raise GameExceptions.DiscordGameError("Somehow there's no Merlin???")
+        elif len(merlins) == 1:
+            pass
+        else:
+            raise GameExceptions.DiscordGameError("Somehow there's more than one Merlin???")
+        
+        merlin = merlins[0]
+         
+        #let everyone know who the stab choice was
+        message = [f"\n{assassin_name} stabbed {guess}"]
+         
+        if guess == merlin:
+            #Case: Merlin was Stabbed
+        
+            message.append(f"\n{guess} was Merlin!\n")
+            
+            self.winning_team = "Merlin was stabbed! Team Evil wins!"
+            
+        else:
+            #Case: Merline was not Stabbed!!
+            message.append(f"\n{guess} was NOT Merlin! {merlin} was!\n")
+            
+            self.winning_team = "Merlin was NOT Stabbed! Team Good wins!"
+            
+        #add people's characters to the public info cache
+        for player in players:
+            player.public_info = [self.get_message_symbol(player.character.team), player.character.name]
                
-    @DiscordGame.command(player=_all_states, help="restart the game (go back to 'new_game')")
+        #move to the game end state
+        self.state="game_end"
+        message += self.game_board.generate_board()
+        message.append(self.get_public_player_info())
+        message.append(self.get_help_message())
+        return message
+    
+    ###################################
+    #Prompt Result Processing Functions#
+    ###################################
+
+    def process_team_prompt(self, results):
+        
+        #validate the result from the team prompt
+        if len(results) == 0:
+            raise GameClasses.DiscordGameError("result from 'team prompt' is empty")
+        elif len(results) == 1:
+            pass
+        else:
+            raise GameClasses.DiscordGameError(f"result from 'team prompt' has too many results: {results.keys()}")
+            
+        if "team_prompt" not in results:
+            raise GameClasses.DiscordGameError(f"unexpected key from 'team prompt': {results.keys()}")
+            
+        results = results["team_prompt"]
+        
+        if results is None:
+            self.lock_voting = False
+            raise GameClasses.DiscordGameIllegalMove(f"The Team Selection Prompt Timed Out. Please Select members for the Team Manually (with [choose <player>])")
+        
+        player_count = self.game_board.player_count
+        
+        for result in results:
+            if result not in self._number_emojis[:player_count]:
+                raise GameClasses.DiscordGameError(f"unexpected emoji from 'team prompt': {result}")
+        
+        choices = [self._option_emojis[result] for result in results]
+                
+        #figure out which players were chosen
+        chosen_player_names = [self.player_order[i-1] for i in choices] #the option emojis are 1 indexed so the option 1 corresponds to the 0th player in the player_order
+        
+        for player_name in chosen_player_names:
+            player = self.get_player_from_name(player_name)
+            player.public_info[1] = self.get_message_symbol("on mission")
+            self.on_mission.add(player)
+                   
+        return self.start_vote() 
+        
+    def process_vote_prompt(self, results):
+        
+        player_count = self.game_board.player_count
+        
+        #validate the result from the vote prompt
+        if len(results) < player_count:
+            raise GameClasses.DiscordGameError(f"Recieved Less Vote Prompt responses than Players: {results.keys()} ")
+
+        vote_dict = {}
+        for player_name, vote_emojis in results.items():
+            
+            #validate the result key (make sure it represents an actual player
+            if player_name not in self.player_order:
+                raise GameClasses.DiscordGameError(f"Non-Registered Player voted in the Vote Prompt: {player_name} ")
+            
+            #validate that the player only voted for one thing
+            if len(vote_emojis) == 0:
+                raise GameClasses.DiscordGameError(f"{player_name} managed to vote for nothing somehow")
+            elif len(vote_emojis) == 1:
+                pass
+            else:
+                raise GameClasses.DiscordGameError(f"{player_name} managed to vote for more than one option somehow")
+            
+            vote_emoji = list(vote_emojis)[0]
+            
+            if vote_emoji is None:
+                self.lock_voting = False
+                raise GameClasses.DiscordGameIllegalMove(f"'{player_name}' took to long and their Vote Prompt Timed Out. All Players please vote Manually (with [vote <choice>])")
+            
+            vote = self._option_emojis.get(vote_emoji, None)
+            
+            if vote == "yes":
+                vote_dict[player_name] = "approve"
+            elif vote == "no":
+                vote_dict[player_name] = "reject"
+            else:
+                raise GameClasses.DiscordGameError(f"'{player_name}' gave an unexpected vote: emoji= {vote_emoji} | vote={vote}")
+                   
+        for player_name, vote in vote_dict.items():
+            player = self.get_player_from_name(player_name)
+            player.vote = vote
+            
+        return self.process_vote()
+        
+    def process_mission_prompt(self, results):
+               
+        #validate the result from the vote prompt
+        if len(results) < len(self.on_mission):
+            raise GameClasses.DiscordGameError(f"Recieved Less Mission Prompt responses than Players On Mission: {results.keys()}")
+
+        mission_dict = {}
+        for player_name, mission_emojis in results.items():
+            
+            player = self.get_player_from_name(player_name)
+            
+            #validate the result key (make sure it represents an actual player on the mission
+            if player not in self.on_mission:
+                raise GameClasses.DiscordGameError(f"Player not on Mission Voted in Mission Prompt: {player_name} ")
+            
+            #validate that the player only voted for one thing
+            if len(mission_emojis) == 0:
+                raise GameClasses.DiscordGameError(f"{player_name} managed to choose nothing for the mission somehow")
+            elif len(mission_emojis) == 1:
+                pass
+            else:
+                raise GameClasses.DiscordGameError(f"{player_name} managed to choose more than one option for the mission somehow")
+            
+            mission_emoji = list(mission_emojis)[0]
+            
+            if mission_emoji is None:
+                self.lock_voting = False
+                raise GameClasses.DiscordGameIllegalMove(f"'{player_name}' took to long and their Mission Prompt Timed Out. All Players on Mission please vote Manually (with [mission <choice>])")
+            
+            mission_card = self._option_emojis.get(mission_emoji, None)
+            
+            if mission_card == "yes":
+                mission_dict[player_name] = "pass"
+            elif mission_card == "no":
+                mission_dict[player_name] = "fail"
+            else:
+                raise GameClasses.DiscordGameError(f"'{player_name}' gave an unexpected choice for the mission: emoji= {mission_emoji} | choice={mission_card}")
+                   
+        for player_name, mission_card in mission_dict.items():
+            player = self.get_player_from_name(player_name)
+            player.mission_card = mission_card
+            
+        return self.go_on_mission()
+        
+    def process_stab_prompt(self, results):
+               
+        #validate the result from the stab prompt
+        if len(results) == 0:
+            raise GameClasses.DiscordGameError("result from 'stab prompt' is empty")
+        elif len(results) == 1:
+            pass
+        else:
+            raise GameClasses.DiscordGameError(f"result from 'stab prompt' has too many results: {results.keys()}")
+            
+        if "stab_prompt" not in results:
+            raise GameClasses.DiscordGameError(f"unexpected key from 'stab prompt': {results.keys()}")
+            
+        stab_emojis = results["stab_prompt"]
+        
+        if stab_emojis is None:
+            self.lock_voting = False
+            raise GameClasses.DiscordGameIllegalMove(f"The Merlin Stab Prompt Timed Out. Please Try to Stab Merlin Manually (with [stab <player>])")
+        
+        #find the assassin
+        assassin_player = None
+        for player in self.get_players_in_registry():
+            if player.has_role("assassin"):
+                if assassin_player is None:
+                    assassin_player = player
+                else:
+                    raise GameExceptions.DiscordGameError(f"Somehow there is more than one Assassin: {player.name} & {assassin_player.name}")
+        
+        if len(stab_emojis) == 0:
+            raise GameClasses.DiscordGameError(f"{assassin_player.name} managed to choose nothing for stabbing Merlin")
+        elif len(stab_emojis) == 1:
+            pass
+        else:
+            raise GameClasses.DiscordGameError(f"{assassin_player.name} managed to choose more than one option for stabbing Merlin somehow")
+        
+        stab_emoji = list(stab_emojis)[0]
+        player_count = self.game_board.player_count
+        
+        if stab_emoji not in self._number_emojis[:player_count]:
+            raise GameClasses.DiscordGameError(f"unexpected emoji from 'stab prompt': {stab_emoji}")
+                
+        stab_choice = self._option_emojis[stab_emoji]
+                
+        #figure out which player was chosen
+        chosen_player = self.player_order[stab_choice-1] #the option emojis are 1 indexed so the option 1 corresponds to the 0th player in the player_order
+                    
+        return self.process_stab(assassin_player.name, chosen_player)
+    
+    #############################
+    #create CommandResultPrompts#
+    #############################
+    
+    def create_team_select_prompt(self, team_leader):
+        
+        emojis = self._number_emojis[:self.game_board.player_count]
+        mission_count = self.game_board.get_current_mission_count()
+        
+        title = [f"{team_leader.name}: Choose {mission_count} players for the mission:"]
+        title += [f"{player_name} : {emoji}" for player_name, emoji in zip(self.player_order, emojis)]
+        title = "\n".join(title)
+        
+        description = "Choose Team"
+        
+        result_message = "You chose the players at the following positions:"
+        
+        return GameClasses.CommandResultPrompt(player = team_leader,
+                                               title = title,
+                                               func_name = "process_team_prompt",
+                                               emojis = emojis,
+                                               dm = False,
+                                               count = mission_count,
+                                               key = "team_prompt",
+                                               description = description,
+                                               result_message = result_message,
+                                               timeout = self._team_prompt_timeout)
+        
+    
+    ###############
+    #Game Commands#
+    ###############
+    
+    @DiscordGame.command(player=_all_states, help="restart the game (go back to 'new_game')", requires_lock = True)
     def restart(self):
         self.reset_game()
         
         return "Restarting Game!"
     
-    @DiscordGame.command(player = _all_states, help="progress game to next phase")
+    @DiscordGame.command(player = _all_states, help="progress game to next phase", requires_lock = True)
     def next(self):
+    
+        if self.enable_button_prompts:
+            self.lock_voting = True
     
         if self.state == "new_game":
             return self.set_up_game()    
@@ -1043,6 +1465,9 @@ class Avalon(DiscordGame):
                 
             if self.enable_emojis:
                 message.append("Emojis in the Game Messages are enabled")
+                
+            if self.enable_button_prompts:
+                message.append("Use of Button Prompts to take Game Actions is Enabled!")
             
             return GameClasses.CommandResultMessage(destination = DiscordChannelContext, text = "\n".join(message))
         
@@ -1148,7 +1573,7 @@ class Avalon(DiscordGame):
             elif value == "disable":
             
                 rule_boolean = False
-                message = self._all_enable_rules[rule]["enable_message"]
+                message = self._all_enable_rules[rule]["disable_message"]
                 
             else:
             
@@ -1162,6 +1587,8 @@ class Avalon(DiscordGame):
                 self.enable_auto_next = rule_boolean
             elif rule == "emojis":
                 self.enable_emojis = rule_boolean
+            elif rule == "button_prompts":
+                self.enable_button_prompts = rule_boolean
             else:
                 return GameExceptions.DiscordGameError(f"Rule dictionary misconfigured for rule: {rule}")
                 
@@ -1171,7 +1598,7 @@ class Avalon(DiscordGame):
         
             raise GameExceptions.DiscordGameIllegalMove(f"Rule not recognized: {rule}")
     
-    @DiscordGame.command(leader=["team_select"], help="choose a player to add the the mission")
+    @DiscordGame.command(leader=["team_select"], help="choose a player to add the the mission", requires_lock = True)
     def choose(self, player_name):
         
         player = self.get_player_from_name(player_name)
@@ -1185,7 +1612,7 @@ class Avalon(DiscordGame):
                 self.on_mission.add(player)
                 return f"{player_name} was added to the mission"
             
-    @DiscordGame.command(leader=["team_select"], help="remove a player from the mission")
+    @DiscordGame.command(leader=["team_select"], help="remove a player from the mission", requires_lock = True)
     def remove(self, player_name):
         
         player = self.get_player_from_name(player_name)
@@ -1198,6 +1625,9 @@ class Avalon(DiscordGame):
         
     @DiscordGame.command(player=["voting"], help="vote 'approve' or 'reject' on the current mission")
     def vote(self, choice, *, DiscordAuthorContext):
+        
+        if self.lock_voting:
+            raise GameExceptions.DiscordGameIllegalMove("Cannot Vote using the 'vote' Command while prompts are active!")
         
         choice = choice.lower()
         
@@ -1231,6 +1661,9 @@ class Avalon(DiscordGame):
             
     @DiscordGame.command(team=["mission"], help="choose to play 'pass' or 'fail' into the current mission")
     def mission(self, choice, *, DiscordAuthorContext):
+        
+        if self.lock_voting:
+            raise GameExceptions.DiscordGameIllegalMove("Cannot Choose a Mission Card using the 'mission' Command while prompts are active!")
         
         choice = choice.lower()
         
@@ -1273,13 +1706,17 @@ class Avalon(DiscordGame):
         else:
             return message        
                 
-    @DiscordGame.command(assassin=["stab"], help="choose who to stab as the assassin")
+    @DiscordGame.command(assassin=["stab"], help="choose who to stab as the assassin", requires_lock = True)
     def stab(self, guess, *, DiscordAuthorContext):
     
         #check to make sure an actual player was chosen
         if not self.check_player_registry(guess):
             raise GameExceptions.DiscordGameIllegalMove(f"{guess} is not a recognized player in the game! Choose again")
-                    
+        
+        return self.process_stab(self.controls[str(DiscordAuthorContext)], guess)
+        
+        #TO BE DELETED:    
+        
         players = self.get_players_in_registry()       
         
         #find merlin

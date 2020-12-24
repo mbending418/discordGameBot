@@ -176,7 +176,7 @@ class Avalon(DiscordGame):
         },
 
         "button_prompts" : {
-            "description" : "Enable using Button Prompts perform in game actions (must be off if auto_next is enabled)",
+            "description" : "Enable using Button Prompts perform in game actions",
             "enable_message" : "Button Prompts Enabled! (Now most in game actions will be controlled via Emoji Buttons)",
             "disable_message" : "Button Prompts Disabled!",
             "default" : True

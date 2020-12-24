@@ -1,6 +1,7 @@
 import os
 import shutil
 import random
+from emoji import EMOJI_ALIAS_UNICODE as EMOJIS
 
 from .players import RPSPlayer
 
@@ -12,7 +13,13 @@ DiscordGame = GameBase.getBaseGameClass()
 class RockPaperScissors(DiscordGame):
     
     _all_states = ["player_select", "throw", "result"]
-        
+    
+    _emoji_dict = {
+        EMOJIS[":fist:"] : "Rock",
+        EMOJIS[":raised_hand:"] : "Paper",
+        EMOJIS[":v:"] : "Scissors"
+    }
+    
     def __init__(self, debug):
         self.debug = debug
     
@@ -43,11 +50,41 @@ class RockPaperScissors(DiscordGame):
             
         self.result = None
         self.state = "player_select"     
-     
-    def process_result(self, message = []):
+    
+    def process_throws(self, throws):
+    
+        for player_name, selection in throws.items():
+            player = self.get_player_from_name(player_name)
+            if len(selection) == 0:
+                raise GameExceptions.DiscordGameError(f"{player_name} never made a choice and timed out! Please Reset Game.")
+            elif len(selection) == 1:
+                pass
+            else:
+                raise GameExceptions.DiscordGameError(f"{player_name} managed to pick more than one choice: {selection}")
+            
+            throw = self._emoji_dict.get(list(selection)[0])
+            
+            if throw == "Rock":
+                player.throw_rock()
+                
+            elif throw == "Paper":
+                player.throw_paper()
+                
+            elif throw == "Scissors":
+                player.throw_scissors()
+                
+            else:
+                raise GameExceptions.DiscordGameError(f"Unknown Throw Registered: player = {player_name} | throw = {selection[0]}")
+            
+        return self.process_result()
+    
+    def process_result(self, message = None):
         """
         Once both players have choosen figure out who won and display it
         """
+        
+        if message is None:
+            message = []
         
         players = self.get_players_in_registry()
         
@@ -82,7 +119,7 @@ class RockPaperScissors(DiscordGame):
         self.state = "result"
         return message      
      
-    @DiscordGame.command(player=_all_states, help="reset the game (go back to 'player_select')")
+    @DiscordGame.command(player=_all_states, help="reset the game (go back to 'player_select')", requires_lock = True)
     def reset(self):
         """
         Command: Go back to Player Select
@@ -92,8 +129,8 @@ class RockPaperScissors(DiscordGame):
         
         return "Restarting Game! Choose Players!"
     
-    @DiscordGame.command(player=["player_select"], help="start the game!")
-    def play(self):
+    @DiscordGame.command(player=["player_select"], help="start the game! set {arg1} to 'manual' to play in 'manual' mode", requires_lock = True)
+    def play(self, mode = ""):
         """
         Command: Play a Game once Two Players have been selected
         """
@@ -109,19 +146,32 @@ class RockPaperScissors(DiscordGame):
             pass
         else:
             raise GameExceptions.DiscordGameIllegalMove("Too Many Players! Need 2 to play")
-                
-        #send each player a custom message prompting them to move
-        player = self.get_players_in_registry()
-        message = [GameClasses.CommandResultMessage(destination = player.discord_channel, text = f"{player.name}: Throw 'Rock', 'Paper', or 'Scissors'! ['throw <selection>']") for player in players]
-        
-        #put a message in the main chat letting everyone know the players are choosing
-        message.append("Both Players: Throw 'Rock', 'Paper', or 'Scissors'! ['throw <selection>']")
-        
+                        
         #advance the game state to 'throw' and return the message
         self.state = "throw"
+        
+        #if playing in button mode, send prompts
+        if mode != "manual":
+        
+            #send each player a prompt to throw Rock Paper or Scissors
+            title = "Choose Rock, Paper, or Scissors!"
+            description = "\n".join([f"{choice} : {emoji}" for emoji,choice in self._emoji_dict.items()])
+            prompts = [GameClasses.CommandResultPrompt(player = player, title = title, func_name = "process_throws", dm = True, description = description, emojis = list(self._emoji_dict.keys())) for player in players]
+        
+            message = ["Both Players: Throw 'Rock', 'Paper', or 'Scissors'!"]
+            message += prompts
+            
+        else:
+        
+            #send dm's to each player if in manual mode
+            message = [GameClasses.CommandResultMessage(destination = player.discord_channel, text = f"{player.name}: Throw 'Rock', 'Paper', or 'Scissors'! ['throw <selection>']") for player in players]
+        
+            #put a message in the main chat letting everyone know the players are choosing
+            message.append("Both Players: Throw 'Rock', 'Paper', or 'Scissors'! ['throw <selection>']")
+        
         return message 
     
-    @DiscordGame.command(player=["throw"], help="Throw either 'Rock', 'Paper', or 'Scissors'!")
+    @DiscordGame.command(player=["throw"], help="Throw either 'Rock', 'Paper', or 'Scissors'!", requires_lock = True)
     def throw(self, option, *, DiscordAuthorContext):
         """
         Command: Let's a Player Throw their choice. Automatically moves to game_state 'result' if both have thrown

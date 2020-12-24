@@ -26,12 +26,17 @@ def getBaseGameClass():
         
             def __init__(self, **kwargs):
                 self._help = kwargs.pop("help", None)
+                self._requires_lock = kwargs.pop("requires_lock", False)
                 self._debug = kwargs.pop("debug", False)
                 self._valid_states = kwargs
             
             def __call__(self, func):
             
-                new_command = GameClasses.CommandInfo(func.__name__, self._valid_states, self._help, self._debug)
+                new_command = GameClasses.CommandInfo(name = func.__name__,
+                                                      valid_states = self._valid_states,
+                                                      help_message = self._help,
+                                                      requires_lock = self._requires_lock,
+                                                      debug = self._debug)
             
                 self._command_registry.append(new_command)
             

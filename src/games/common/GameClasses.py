@@ -41,20 +41,23 @@ class CommandInfo:
     
     name (str) : The string used by a user/player to invoke this command
         
-    _valid_states (Dict[str -> List[str]]) : A Dict that maps game roles (str) to a List of what game states (str)
+    valid_states (Dict[str -> List[str]]) : A Dict that maps game roles (str) to a List of what game states (str)
                                                 that the role let's you use this command from
                                                
     help_message (str) : The help message to display to describe this command
+    
+    requires_lock (bool): Set this flag to True if this command requires the game lock. Only one command requiring the game lock can be run at a time
         
     debug (bool) : Set this flag to True if this command is only available from debug mode
     """
     
-    def __init__(self, name, valid_states, help_message = None, debug = False):
+    def __init__(self, name, valid_states, help_message = None, requires_lock = False, debug = False):
         self.name = name
         self.valid_states = valid_states
         self.help_message = help_message
+        self.requires_lock = requires_lock
         self.debug = debug
-        
+                
     def get_permitted_roles(self, game_state):
         """
         returns what roles are permitted to use this command at a particular game state

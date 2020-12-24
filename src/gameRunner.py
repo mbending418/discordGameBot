@@ -28,6 +28,8 @@ class GameRunner:
         
         self.make_kill_command()
         
+        self.is_locked = False
+        
         self.bot.run(self.token)
             
     def make_command(self, command):
@@ -113,8 +115,57 @@ class GameRunner:
         
         async def new_function(ctx, *args, **kwargs):
         
-            try:
-                                
+            #if the command requires a lock atttempt to acquire it
+            if command.requires_lock:
+                try:                    
+                    if self.is_locked:
+                        raise games.common.GameExceptions.DiscordGameIllegalMove(f"Another command currently has the Game Lock. Cannot call {command.name}")
+                    else:
+                        self.is_locked=True
+                
+                except games.common.GameExceptions.DiscordGameIllegalMove as e:
+                    await ctx.channel.send(f"Illegal Move: {e}")
+                
+                    try:
+                        if self.illegal_move_log_channel is not None:
+                            guild_name = self.illegal_move_log_channel["Guild"]
+                            channel_name = self.illegal_move_log_channel["Channel"]
+                        
+                            guild = discord.utils.find(lambda guild: guild.name == guild_name, self.bot.guilds)
+                            channel = discord.utils.find(lambda channel: channel.name == channel_name, guild.channels)
+                        
+                            await channel.send("\n=========================")
+                            await channel.send(type(e))
+                            await channel.send(e)
+                            await channel.send("\n".join(traceback.format_tb(e.__traceback__)))   
+                    except:
+                        pass
+                    finally:
+                        return
+                            
+                except Exception as e:
+                    await ctx.channel.send(f"Unrecognized Exception: {e}")
+                
+                    try:
+                        if self.error_log_channel is not None:
+                            guild_name = self.error_log_channel["Guild"]
+                            channel_name = self.error_log_channel["Channel"]
+                        
+                            guild = discord.utils.find(lambda guild: guild.name == guild_name, self.bot.guilds)
+                            channel = discord.utils.find(lambda channel: channel.name == channel_name, guild.channels)
+                        
+                            await channel.send("\n=========================")
+                            await channel.send(type(e))
+                            await channel.send(e)
+                            await channel.send("\n".join(traceback.format_tb(e.__traceback__)))
+                    except:
+                        pass
+                    finally:
+                        return
+                        
+            #Run the command
+            try:                    
+                 
                 #find the guild and channel the game is using
                 guild = discord.utils.find(lambda guild: guild.name == self.game_guild_name, self.bot.guilds)
                 game_channel = discord.utils.find(lambda channel: channel.name == self.game_channel_name, guild.channels)
@@ -187,11 +238,9 @@ class GameRunner:
                         messages = result
                                 
                     #send the messages returned by the command
-                    await process_command_result(game_channel, messages)
-                    
-                    
-                
-                                
+                    await process_command_result(game_channel, messages)  
+            
+            #catch any Illegal Game Moves thrown
             except games.common.GameExceptions.DiscordGameIllegalMove as e:
                 await ctx.channel.send(f"Illegal Move: {e}")
                 
@@ -211,7 +260,7 @@ class GameRunner:
                 except:
                     pass
                 
-            
+            #catch any Game Errors thrown
             except games.common.GameExceptions.DiscordGameError as e:
                 await ctx.channel.send(f"Game Error: {e}")
                 
@@ -231,6 +280,7 @@ class GameRunner:
                 except:
                     pass
             
+            #catch any other Exceptions Thrown
             except Exception as e:
                 await ctx.channel.send(f"Unrecognized Exception: {e}")
                 
@@ -249,6 +299,11 @@ class GameRunner:
                         
                 except:
                     pass
+                    
+            #release the game lock if it was acquired
+            finally:
+                if command.requires_lock:
+                    self.is_locked = False    
         
         new_command = commands.Command(new_function, name=command.name, help=command.help_message)
         

@@ -162,10 +162,10 @@ class Avalon(DiscordGame):
         },
         
         "auto_next" : {
-            "description" : "Enable to have the game automatically call 'next' when all votes/mission_cards are in",
+            "description" : "Enable to have the game automatically call 'next' when all votes/mission_cards are in (does nothing is button_prompts is enabled)",
             "enable_message" : "Auto Next Enabled! (game will now automatically call 'next' when votes/mission_cards are in)",
             "disable_message" : "Auto Next Disabled! ('next' will no longer be automatically called by the game",
-            "default" : True
+            "default" : False
         },
         
         "emojis" : {
@@ -176,7 +176,7 @@ class Avalon(DiscordGame):
         },
 
         "button_prompts" : {
-            "description" : "Enable using Button Prompts perform in game actions",
+            "description" : "Enable using Button Prompts perform in game actions (must be off if auto_next is enabled)",
             "enable_message" : "Button Prompts Enabled! (Now most in game actions will be controlled via Emoji Buttons)",
             "disable_message" : "Button Prompts Disabled!",
             "default" : True
@@ -223,9 +223,9 @@ class Avalon(DiscordGame):
     _number_emojis = [EMOJIS[f":{key}:"] for key in ["one","two","three","four","five","six","seven","eight", "nine", "ten"]]
     
     _team_prompt_timeout = 300.0 #Give them 5 min to pick a team
-    _vote_prompt_timeout = 300.0 
-    _mission_prompt_timeout = 300.0
-    _stab_prompt_timeout = 300.0
+    _vote_prompt_timeout = 120.0 #Give them 2 min to vote
+    _mission_prompt_timeout = 120.0 #Give them 2 min to vote
+    _stab_prompt_timeout = 300.0 #Give them 2 min to vote
     
     def __init__(self, debug):
         self.debug = debug
@@ -1150,26 +1150,26 @@ class Avalon(DiscordGame):
         
         #validate the result from the team prompt
         if len(results) == 0:
-            raise GameClasses.DiscordGameError("result from 'team prompt' is empty")
+            raise GameExceptions.DiscordGameError("result from 'team prompt' is empty")
         elif len(results) == 1:
             pass
         else:
-            raise GameClasses.DiscordGameError(f"result from 'team prompt' has too many results: {results.keys()}")
+            raise GameExceptions.DiscordGameError(f"result from 'team prompt' has too many results: {results.keys()}")
             
         if "team_prompt" not in results:
-            raise GameClasses.DiscordGameError(f"unexpected key from 'team prompt': {results.keys()}")
+            raise GameExceptions.DiscordGameError(f"unexpected key from 'team prompt': {results.keys()}")
             
         results = results["team_prompt"]
         
         if results is None:
             self.lock_voting = False
-            raise GameClasses.DiscordGameIllegalMove(f"The Team Selection Prompt Timed Out. Please Select members for the Team Manually (with [choose <player>])")
+            raise GameExceptions.DiscordGameIllegalMove(f"The Team Selection Prompt Timed Out. Please Select members for the Team Manually (with [choose <player>])")
         
         player_count = self.game_board.player_count
         
         for result in results:
             if result not in self._number_emojis[:player_count]:
-                raise GameClasses.DiscordGameError(f"unexpected emoji from 'team prompt': {result}")
+                raise GameExceptions.DiscordGameError(f"unexpected emoji from 'team prompt': {result}")
         
         choices = [self._option_emojis[result] for result in results]
                 
@@ -1189,29 +1189,28 @@ class Avalon(DiscordGame):
         
         #validate the result from the vote prompt
         if len(results) < player_count:
-            raise GameClasses.DiscordGameError(f"Recieved Less Vote Prompt responses than Players: {results.keys()} ")
+            raise GameExceptions.DiscordGameError(f"Recieved Less Vote Prompt responses than Players: {results.keys()} ")
 
         vote_dict = {}
         for player_name, vote_emojis in results.items():
             
             #validate the result key (make sure it represents an actual player
             if player_name not in self.player_order:
-                raise GameClasses.DiscordGameError(f"Non-Registered Player voted in the Vote Prompt: {player_name} ")
+                raise GameExceptions.DiscordGameError(f"Non-Registered Player voted in the Vote Prompt: {player_name} ")
             
             #validate that the player only voted for one thing
-            if len(vote_emojis) == 0:
-                raise GameClasses.DiscordGameError(f"{player_name} managed to vote for nothing somehow")
+            if vote_emojis is None:
+                self.lock_voting = False
+                raise GameExceptions.DiscordGameIllegalMove(f"'{player_name}' took to long and their Vote Prompt Timed Out. All Players please vote Manually (with [vote <choice>])")
+            elif len(vote_emojis) == 0:
+                raise GameExceptions.DiscordGameError(f"{player_name} managed to vote for nothing somehow")
             elif len(vote_emojis) == 1:
                 pass
             else:
-                raise GameClasses.DiscordGameError(f"{player_name} managed to vote for more than one option somehow")
+                raise GameExceptions.DiscordGameError(f"{player_name} managed to vote for more than one option somehow")
             
             vote_emoji = list(vote_emojis)[0]
-            
-            if vote_emoji is None:
-                self.lock_voting = False
-                raise GameClasses.DiscordGameIllegalMove(f"'{player_name}' took to long and their Vote Prompt Timed Out. All Players please vote Manually (with [vote <choice>])")
-            
+                        
             vote = self._option_emojis.get(vote_emoji, None)
             
             if vote == "yes":
@@ -1219,7 +1218,7 @@ class Avalon(DiscordGame):
             elif vote == "no":
                 vote_dict[player_name] = "reject"
             else:
-                raise GameClasses.DiscordGameError(f"'{player_name}' gave an unexpected vote: emoji= {vote_emoji} | vote={vote}")
+                raise GameExceptions.DiscordGameError(f"'{player_name}' gave an unexpected vote: emoji= {vote_emoji} | vote={vote}")
                    
         for player_name, vote in vote_dict.items():
             player = self.get_player_from_name(player_name)
@@ -1231,7 +1230,7 @@ class Avalon(DiscordGame):
                
         #validate the result from the vote prompt
         if len(results) < len(self.on_mission):
-            raise GameClasses.DiscordGameError(f"Recieved Less Mission Prompt responses than Players On Mission: {results.keys()}")
+            raise GameExceptions.DiscordGameError(f"Recieved Less Mission Prompt responses than Players On Mission: {results.keys()}")
 
         mission_dict = {}
         for player_name, mission_emojis in results.items():
@@ -1240,22 +1239,21 @@ class Avalon(DiscordGame):
             
             #validate the result key (make sure it represents an actual player on the mission
             if player not in self.on_mission:
-                raise GameClasses.DiscordGameError(f"Player not on Mission Voted in Mission Prompt: {player_name} ")
+                raise GameExceptions.DiscordGameError(f"Player not on Mission Voted in Mission Prompt: {player_name} ")
             
             #validate that the player only voted for one thing
-            if len(mission_emojis) == 0:
-                raise GameClasses.DiscordGameError(f"{player_name} managed to choose nothing for the mission somehow")
+            if mission_emojis is None:
+                self.lock_voting = False
+                raise GameExceptions.DiscordGameIllegalMove(f"'{player_name}' took to long and their Mission Prompt Timed Out. All Players on Mission please vote Manually (with [mission <choice>])")
+            elif len(mission_emojis) == 0:
+                raise GameExceptions.DiscordGameError(f"{player_name} managed to choose nothing for the mission somehow")
             elif len(mission_emojis) == 1:
                 pass
             else:
-                raise GameClasses.DiscordGameError(f"{player_name} managed to choose more than one option for the mission somehow")
+                raise GameExceptions.DiscordGameError(f"{player_name} managed to choose more than one option for the mission somehow")
             
             mission_emoji = list(mission_emojis)[0]
-            
-            if mission_emoji is None:
-                self.lock_voting = False
-                raise GameClasses.DiscordGameIllegalMove(f"'{player_name}' took to long and their Mission Prompt Timed Out. All Players on Mission please vote Manually (with [mission <choice>])")
-            
+                        
             mission_card = self._option_emojis.get(mission_emoji, None)
             
             if mission_card == "yes":
@@ -1263,7 +1261,7 @@ class Avalon(DiscordGame):
             elif mission_card == "no":
                 mission_dict[player_name] = "fail"
             else:
-                raise GameClasses.DiscordGameError(f"'{player_name}' gave an unexpected choice for the mission: emoji= {mission_emoji} | choice={mission_card}")
+                raise GameExceptions.DiscordGameError(f"'{player_name}' gave an unexpected choice for the mission: emoji= {mission_emoji} | choice={mission_card}")
                    
         for player_name, mission_card in mission_dict.items():
             player = self.get_player_from_name(player_name)
@@ -1275,20 +1273,20 @@ class Avalon(DiscordGame):
                
         #validate the result from the stab prompt
         if len(results) == 0:
-            raise GameClasses.DiscordGameError("result from 'stab prompt' is empty")
+            raise GameExceptions.DiscordGameError("result from 'stab prompt' is empty")
         elif len(results) == 1:
             pass
         else:
-            raise GameClasses.DiscordGameError(f"result from 'stab prompt' has too many results: {results.keys()}")
+            raise GameExceptions.DiscordGameError(f"result from 'stab prompt' has too many results: {results.keys()}")
             
         if "stab_prompt" not in results:
-            raise GameClasses.DiscordGameError(f"unexpected key from 'stab prompt': {results.keys()}")
+            raise GameExceptions.DiscordGameError(f"unexpected key from 'stab prompt': {results.keys()}")
             
         stab_emojis = results["stab_prompt"]
         
         if stab_emojis is None:
             self.lock_voting = False
-            raise GameClasses.DiscordGameIllegalMove(f"The Merlin Stab Prompt Timed Out. Please Try to Stab Merlin Manually (with [stab <player>])")
+            raise GameExceptions.DiscordGameIllegalMove(f"The Merlin Stab Prompt Timed Out. Please Try to Stab Merlin Manually (with [stab <player>])")
         
         #find the assassin
         assassin_player = None
@@ -1300,17 +1298,17 @@ class Avalon(DiscordGame):
                     raise GameExceptions.DiscordGameError(f"Somehow there is more than one Assassin: {player.name} & {assassin_player.name}")
         
         if len(stab_emojis) == 0:
-            raise GameClasses.DiscordGameError(f"{assassin_player.name} managed to choose nothing for stabbing Merlin")
+            raise GameExceptions.DiscordGameError(f"{assassin_player.name} managed to choose nothing for stabbing Merlin")
         elif len(stab_emojis) == 1:
             pass
         else:
-            raise GameClasses.DiscordGameError(f"{assassin_player.name} managed to choose more than one option for stabbing Merlin somehow")
+            raise GameExceptions.DiscordGameError(f"{assassin_player.name} managed to choose more than one option for stabbing Merlin somehow")
         
         stab_emoji = list(stab_emojis)[0]
         player_count = self.game_board.player_count
         
         if stab_emoji not in self._number_emojis[:player_count]:
-            raise GameClasses.DiscordGameError(f"unexpected emoji from 'stab prompt': {stab_emoji}")
+            raise GameExceptions.DiscordGameError(f"unexpected emoji from 'stab prompt': {stab_emoji}")
                 
         stab_choice = self._option_emojis[stab_emoji]
                 
@@ -1361,34 +1359,40 @@ class Avalon(DiscordGame):
     @DiscordGame.command(player = _all_states, help="progress game to next phase", requires_lock = True)
     def next(self):
     
-        if self.enable_button_prompts:
-            self.lock_voting = True
+        try:
+            #lock voting is button prompts enabled
+            if self.enable_button_prompts:
+                self.lock_voting = True
     
-        if self.state == "new_game":
-            return self.set_up_game()    
+            if self.state == "new_game":
+                return self.set_up_game()    
         
-        elif self.state == "team_select":
-            return self.start_vote()
+            elif self.state == "team_select":
+                return self.start_vote()
             
-        elif self.state == "voting":
-            return self.process_vote()
+            elif self.state == "voting":
+                return self.process_vote()
             
-        elif self.state == "mission":
-            return self.go_on_mission()
+            elif self.state == "mission":
+                return self.go_on_mission()
         
-        elif self.state == "stab":
-            
-            return ["Currently Waiting for the Assassin to Stab someone\n", self.get_help_message()]
+            elif self.state == "stab":
+                return ["Currently Waiting for the Assassin to Stab someone\n", self.get_help_message()]
         
-        elif self.state == "game_end":
+            elif self.state == "game_end":
             
-            self.reset_game()
-            self.state = "new_game"
-            return ["New Game!\n", self.get_public_player_info(), self.get_help_message()]
+                self.reset_game()
+                self.state = "new_game"
+                return ["New Game!\n", self.get_public_player_info(), self.get_help_message()]
             
-        else:
+            else:
         
-            raise GameExceptions.DiscordGameError("Game in bad game state!")
+                raise GameExceptions.DiscordGameError("Game in bad game state!")
+                
+        except Exception as e:
+            #if an exception was thrown unlock voting
+            self.lock_voting = False
+            raise e
     
     @DiscordGame.command(player = _all_states, help="take control of a player", debug = True)
     def control(self, player_name, *, DiscordAuthorContext, DiscordChannelContext):
@@ -1577,7 +1581,7 @@ class Avalon(DiscordGame):
                 
             else:
             
-                return GameExceptions.DiscordGameIllegalMove(f"modifiyer not recognized, please select 'enable' or 'disable' to change rule: {rule}")
+                raise GameExceptions.DiscordGameIllegalMove(f"modifiyer not recognized, please select 'enable' or 'disable' to change rule: {rule}")
                 
             if rule == "mission_log":
                 self.enable_mission_log = rule_boolean
@@ -1590,7 +1594,7 @@ class Avalon(DiscordGame):
             elif rule == "button_prompts":
                 self.enable_button_prompts = rule_boolean
             else:
-                return GameExceptions.DiscordGameError(f"Rule dictionary misconfigured for rule: {rule}")
+                raise GameExceptions.DiscordGameError(f"Rule dictionary misconfigured for rule: {rule}")
                 
             return message
                 
@@ -1653,9 +1657,11 @@ class Avalon(DiscordGame):
             if player.vote is None:
                 players_not_voted.append(player.name)
         
-        #call next if all players have voted and auto next is enabled
-        if self.enable_auto_next and len(players_not_voted) == 0:
+        #call next if all players have voted and auto next is enabled and button_prompts is diabled
+        if (self.enable_auto_next) and (not self.enable_button_prompts) and (len(players_not_voted) == 0):
+        
             return self.process_vote(message = [message])
+                
         else:
             return message            
             
@@ -1700,9 +1706,11 @@ class Avalon(DiscordGame):
             if player.mission_card is None:
                 players_not_voted.append(player.name)
         
-        #call next if all players have choose their mission card and auto next is enabled
-        if self.enable_auto_next and len(players_not_voted) == 0:
+        #call next if all players have voted and auto next is enabled and button_prompts is diabled
+        if (self.enable_auto_next) and (not self.enable_button_prompts) and  (len(players_not_voted) == 0):
+            
             return self.go_on_mission(message = [message])
+                    
         else:
             return message        
                 

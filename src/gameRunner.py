@@ -107,7 +107,7 @@ class GameRunner:
                         choice_box = discord.Embed(title = prompt.title, description = f"Current selection: {current_choices}")
                         await message.edit(embed = choice_box)
                         
-            if len(choices) == 1:
+            if (choices is not None) and (len(choices) == 1):
                 desc = f"{prompt.result_message} {list(choices)[0]}"
             else:
                 desc = f"{prompt.result_message} {choices}"

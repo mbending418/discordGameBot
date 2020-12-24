@@ -79,6 +79,7 @@ class GameRunner:
             def check(reaction, user):
                 return (user == prompt.player.discord_channel) and (reaction.message.id == message.id)
                 
+               
             choices = set()
             while len(choices) < prompt.count:
                 
@@ -89,6 +90,8 @@ class GameRunner:
                 except asyncio.TimeoutError:
                     timeout_box = discord.Embed(title = prompt.title, description = "Timed out! Please manually make selection with game commands")
                     await message.edit(embed = timeout_box)
+                    choices = None
+                    break
                     
                 if reaction.emoji in prompt.emojis:
                 
@@ -114,58 +117,9 @@ class GameRunner:
             return (prompt.key, choices)
         
         async def new_function(ctx, *args, **kwargs):
-        
-            #if the command requires a lock atttempt to acquire it
-            if command.requires_lock:
-                try:                    
-                    if self.is_locked:
-                        raise games.common.GameExceptions.DiscordGameIllegalMove(f"Another command currently has the Game Lock. Cannot call {command.name}")
-                    else:
-                        self.is_locked=True
-                
-                except games.common.GameExceptions.DiscordGameIllegalMove as e:
-                    await ctx.channel.send(f"Illegal Move: {e}")
-                
-                    try:
-                        if self.illegal_move_log_channel is not None:
-                            guild_name = self.illegal_move_log_channel["Guild"]
-                            channel_name = self.illegal_move_log_channel["Channel"]
-                        
-                            guild = discord.utils.find(lambda guild: guild.name == guild_name, self.bot.guilds)
-                            channel = discord.utils.find(lambda channel: channel.name == channel_name, guild.channels)
-                        
-                            await channel.send("\n=========================")
-                            await channel.send(type(e))
-                            await channel.send(e)
-                            await channel.send("\n".join(traceback.format_tb(e.__traceback__)))   
-                    except:
-                        pass
-                    finally:
-                        return
-                            
-                except Exception as e:
-                    await ctx.channel.send(f"Unrecognized Exception: {e}")
-                
-                    try:
-                        if self.error_log_channel is not None:
-                            guild_name = self.error_log_channel["Guild"]
-                            channel_name = self.error_log_channel["Channel"]
-                        
-                            guild = discord.utils.find(lambda guild: guild.name == guild_name, self.bot.guilds)
-                            channel = discord.utils.find(lambda channel: channel.name == channel_name, guild.channels)
-                        
-                            await channel.send("\n=========================")
-                            await channel.send(type(e))
-                            await channel.send(e)
-                            await channel.send("\n".join(traceback.format_tb(e.__traceback__)))
-                    except:
-                        pass
-                    finally:
-                        return
-                        
-            #Run the command
-            try:                    
-                 
+            
+            #Check to see if the user is allowed to use this command right now
+            try:
                 #find the guild and channel the game is using
                 guild = discord.utils.find(lambda guild: guild.name == self.game_guild_name, self.bot.guilds)
                 game_channel = discord.utils.find(lambda channel: channel.name == self.game_channel_name, guild.channels)
@@ -176,16 +130,87 @@ class GameRunner:
                 #check to make sure if it's a DM, that it's from a player in the game
                 if isinstance(ctx.channel, discord.channel.DMChannel) and len(players) == 0:
                     await ctx.author.send("Permission Denied! Please join the game in order to Send Commands")
-                    return
+                    raise games.common.GameExceptions.DiscordGameIllegalMove(f"'{ctx.author.name}' tried to send a command via DM to a game they're aren't in")
                     
                 #check to make sure if it's a text channel, that it's from the game_channel
                 if isinstance(ctx.channel, discord.channel.TextChannel) and game_channel != ctx.channel:
-                    return
+                    raise games.common.GameExceptions.DiscordGameIllegalMove(f"'{ctx.author.name}' tried to send a command to a game from the wrong channel")
                     
                 #check to make sure it's either a text channel or a DM
                 if not isinstance(ctx.channel, (discord.channel.DMChannel, discord.channel.TextChannel)):
+                    raise games.common.GameExceptions.DiscordGameIllegalMove(f"Got a message from '{ctx.channel}'. Which of unrecognized type: {type(ctx.channel)}")
+                
+                #if the command requires a lock atttempt to acquire it
+                if command.requires_lock:
+                                    
+                    if self.is_locked:
+                        await ctx.channel.send(f"Illegal Move: Another command currently has the Game Lock. Cannot call '{command.name}'")
+                        raise games.common.GameExceptions.DiscordGameIllegalMove(f"Another command currently has the Game Lock. Cannot call '{command.name}'")
+                    else:
+                        self.is_locked=True
+                
+            except games.common.GameExceptions.DiscordGameIllegalMove as e:
+                
+                try:
+                    if self.illegal_move_log_channel is not None:
+                        guild_name = self.illegal_move_log_channel["Guild"]
+                        channel_name = self.illegal_move_log_channel["Channel"]
+                    
+                        guild = discord.utils.find(lambda guild: guild.name == guild_name, self.bot.guilds)
+                        channel = discord.utils.find(lambda channel: channel.name == channel_name, guild.channels)
+                    
+                        await channel.send("\n=========================")
+                        await channel.send(type(e))
+                        await channel.send(e)
+                        await channel.send("\n".join(traceback.format_tb(e.__traceback__)))   
+                except:
+                    pass
+                finally:
                     return
-                                
+            
+            #catch any Game Errors thrown
+            except games.common.GameExceptions.DiscordGameError as e:
+                await ctx.channel.send(f"Game Error: {e}")
+                
+                try:
+                    if self.error_log_channel is not None:
+                        guild_name = self.error_log_channel["Guild"]
+                        channel_name = self.error_log_channel["Channel"]
+                        
+                        guild = discord.utils.find(lambda guild: guild.name == guild_name, self.bot.guilds)
+                        channel = discord.utils.find(lambda channel: channel.name == channel_name, guild.channels)
+                        
+                        await channel.send("\n=========================")
+                        await channel.send(type(e))
+                        await channel.send(e)
+                        await channel.send("\n".join(traceback.format_tb(e.__traceback__)))
+                        
+                except:
+                    pass
+            
+            except Exception as e:
+                await ctx.channel.send(f"Unrecognized Exception: {e}")
+                
+                try:
+                    if self.error_log_channel is not None:
+                        guild_name = self.error_log_channel["Guild"]
+                        channel_name = self.error_log_channel["Channel"]
+                    
+                        guild = discord.utils.find(lambda guild: guild.name == guild_name, self.bot.guilds)
+                        channel = discord.utils.find(lambda channel: channel.name == channel_name, guild.channels)
+                      
+                        await channel.send("\n=========================")
+                        await channel.send(type(e))
+                        await channel.send(e)
+                        await channel.send("\n".join(traceback.format_tb(e.__traceback__)))
+                except:
+                    pass
+                finally:
+                    return
+                        
+            #Run the command
+            try:                    
+                                                
                 #add the author and the channel to the kwargs
                 kwargs["DiscordAuthorContext"] = ctx.author
                 kwargs["DiscordChannelContext"] = ctx.channel

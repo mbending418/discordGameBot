@@ -363,7 +363,7 @@ class Avalon(DiscordGame):
         elif len(team_leaders) == 1:
             pass
         else:
-            raise GameExceptions.DiscordGameError("Somehow there's more than one Team Leader???: {team_leaders}")
+            raise GameExceptions.DiscordGameError(f"Somehow there's more than one Team Leader???: {team_leaders}")
             
         return team_leaders[0]
     

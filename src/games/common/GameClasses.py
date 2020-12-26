@@ -1,4 +1,8 @@
+from emoji import EMOJI_ALIAS_UNICODE as EMOJIS
+
 from . import GameExceptions
+
+END_EMOJI = EMOJIS[":x:"]
 
 class CommandInfo:
     """
@@ -127,8 +131,31 @@ class CommandResultMessage:
         self.text = text
         self.image = image
         self.send_both = send_both
- 
+        
+class CommandResultInterrupt:
+
+    """See if any player wants to respond to the current game action"""
+    
+    def __init__(self, title, players, func_name, emojis, end_emoji = None, max_responses = None, result_message = "", timeout = 30.0):
+      
+        #default end_emoji
+        if end_emoji is None:
+            end_emoji = END_EMOJI
+        
+        self.players = players
+        
+        self.func_name = func_name        
+        
+        self.title = title
+        self.result_message = result_message
+        self.emojis = emojis
+        self.end_emoji = end_emoji
+        self.max_responses = max_responses
+        self.timeout = timeout
+
 class CommandResultPrompt:
+
+    """Prompt a Player to make a Selection or Selections"""
 
     def __init__(self, player, title, func_name, emojis = None, dm = False, count = 1, key = None, description = None, result_message = None, timeout = 30.0):
         

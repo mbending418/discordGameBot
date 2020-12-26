@@ -64,7 +64,7 @@ class GameRunner:
             else:
                 raise games.common.GameExceptions.DiscordGameError(f"result from commmand '{command.name}' not recognized: {type(command_result)}")
         
-        async def prompt_player(prompt : games.common.GameClasses.CommandResultPrompt, default_channel):
+        async def prompt_player(default_channel, prompt : games.common.GameClasses.CommandResultPrompt):
             
             vote_box = discord.Embed(title = prompt.title, description = prompt.description)
             
@@ -115,6 +115,57 @@ class GameRunner:
             await message.edit(embed = recorded_box)
             
             return (prompt.key, choices)
+        
+        async def prompt_interrupt(game_channel, interrupt : games.common.GameClasses.CommandResultInterrupt):
+                       
+            responses = {player.name : set() for player in interrupt.players}
+            player_map = {player.discord_name : player.name for player in interrupt.players}
+            description = "\n".join(f"{player.name}: {list(responses[player.name])}" for player in interrupt.players)
+            interrupt_box = discord.Embed(title = interrupt.title, description = description)
+                        
+            message = await game_channel.send(embed= interrupt_box)
+            for emoji in interrupt.emojis:
+                await message.add_reaction(emoji)
+            await message.add_reaction(interrupt.end_emoji)
+                
+            def check(reaction, user):
+                return (user in [player.discord_channel for player in interrupt.players]) and (reaction.message.id == message.id)
+                
+            count = 0
+            reaction = None
+            while (reaction is None or reaction.emoji != interrupt.end_emoji) and (interrupt.max_responses is None or count < interrupt.max_responses):
+                
+                try:
+                    reaction, user = await self.bot.wait_for("reaction_add", timeout = interrupt.timeout, check = check)
+                    await message.remove_reaction(reaction, user)
+                except asyncio.TimeoutError:
+                    timeout_box = discord.Embed(title = interrupt.title, description = "Timed out! Please manually make selection with game commands")
+                    await message.edit(embed = timeout_box)
+                    break
+                    
+                if reaction.emoji in interrupt.emojis:
+                
+                    player_name = player_map[str(user)]
+                
+                    if reaction.emoji in responses[player_name]:
+                        responses[player_name].remove(reaction.emoji)
+                        count-=1
+                    else:
+                        responses[player_name].add(reaction.emoji)
+                        count+=1
+                    
+                    description = "\n".join(f"{player.name}: {list(responses[player.name])}" for player in interrupt.players)
+                    interrupt_box = discord.Embed(title = interrupt.title, description = description)
+                    await message.edit(embed = interrupt_box)   
+            
+            print(interrupt.result_message)
+            
+            description = "\n".join(f"{player.name}: {list(responses[player.name])}" for player in interrupt.players)
+            description += f"\n\n{interrupt.result_message}"
+            interrupt_box = discord.Embed(title = interrupt.title, description = description)
+            await message.edit(embed = interrupt_box)
+            
+            return responses
         
         async def new_function(ctx, *args, **kwargs):
             
@@ -220,45 +271,79 @@ class GameRunner:
                 
                 #seperate out the prompts from the messages
                 if isinstance(result, (list, tuple)):
+                    interrupts = [res for res in result if isinstance(res, games.common.GameClasses.CommandResultInterrupt)]
                     prompts = [res for res in result if isinstance(res, games.common.GameClasses.CommandResultPrompt)]
                     messages = [res for res in result if not isinstance(res, games.common.GameClasses.CommandResultPrompt)]
                 elif isinstance(result, games.common.GameClasses.CommandResultPrompt):
+                    interrupts = []
                     prompts = [result]
                     messages = None
-                else:    
+                elif isinstance(result, games.common.GameClasses.CommandResultInterrupt):
+                    interrupts = [result]
+                    prompts = []
+                    messages = None                    
+                else: 
+                    interrupts = []
                     prompts = []
                     messages = result
                                 
                 #send the messages returned by the command
                 await process_command_result(game_channel, messages)
+                                
+                #keep looping until there are no more game prompts or interrupts
+                while len(prompts) != 0 or len(interrupts) != 0:
                 
-                #keep looping intil there are no more game prompts
-                while len(prompts) != 0:
-                
-                    #send out the CommandResultPrompts to the respective players
-                
-                    #validate that the field "func_name" matches for all the CommandResultPrompts and that "func_name" is a function in the game
-                    func_name = prompts[0].func_name
-                
-                    for prompt in prompts:
-                        if func_name != prompt.func_name:
-                            raise games.common.GameExceptions.DiscordGameError(f"Two of the follow up functions for the CommandResultPrompts don't match: {func_name} and {prompte.func_name}")
-                        
-                    if func_name not in dir(self.game):
-                        raise games.common.GameExceptions.DiscordGameError(f"The Game has not field by the name '{func_name}'. Cannot use this as a follow up functon")
-                
-                    #prompt the players and get their results
-                    prompt_results = await asyncio.gather(*[prompt_player(prompt, game_channel) for prompt in prompts])
-                    prompt_results_dict = {pr[0] : pr[1] for pr in prompt_results}
-                
-                    #call the followup function
-                    result = self.game.__getattribute__(func_name)(prompt_results_dict)
+                    if len(prompts) != 0 and len(interrupts) != 0:
+                        raise games.common.GameExceptions.DiscordGameError("Command returned CommandResultPrompts and CommandResultInterrupt. Only one or the other is allowed.")
                     
-                    #seperate out the prompts from the messages
+                    if len(prompts) != 0:
+                    
+                        #send out the CommandResultPrompts to the respective players
+                
+                        #validate that the field "func_name" matches for all the CommandResultPrompts and that "func_name" is a function in the game
+                        func_name = prompts[0].func_name
+                
+                        for prompt in prompts:
+                            if func_name != prompt.func_name:
+                                raise games.common.GameExceptions.DiscordGameError(f"Two of the follow up functions for the CommandResultPrompts don't match: {func_name} and {prompte.func_name}")
+                        
+                        if func_name not in dir(self.game):
+                            raise games.common.GameExceptions.DiscordGameError(f"The Game has not field by the name '{func_name}'. Cannot use this as a follow up functon")
+                
+                        #prompt the players and get their results
+                        prompt_results = await asyncio.gather(*[prompt_player(game_channel, prompt) for prompt in prompts])
+                        prompt_results_dict = {pr[0] : pr[1] for pr in prompt_results}
+                
+                        #call the return function
+                        result = self.game.__getattribute__(func_name)(prompt_results_dict)
+                    
+                    elif len(interrupts) == 1:
+                        interrupt = interrupts[0]
+                    
+                        #prompt the players to see if they want to interrupt
+                        prompt_results = await prompt_interrupt(game_channel, interrupt)
+                        
+                        #call the return function
+                        result = self.game.__getattribute__(interrupt.func_name)(prompt_results)
+                    
+                    else:
+                        raise games.common.GameExceptions.DiscordGameError("Command returned multiple CommandResultInterrupts. Only one is allowed.")
+                    
+                    #seperate out the prompts and interrupts from the messages
                     if isinstance(result, (list, tuple)):
+                        interrupts = [res for res in result if isinstance(res, games.common.GameClasses.CommandResultInterrupt)]
                         prompts = [res for res in result if isinstance(res, games.common.GameClasses.CommandResultPrompt)]
                         messages = [res for res in result if not isinstance(res, games.common.GameClasses.CommandResultPrompt)]
-                    else:
+                    elif isinstance(result, games.common.GameClasses.CommandResultPrompt):
+                        interrupts = []
+                        prompts = [result]
+                        messages = None
+                    elif isinstance(result, games.common.GameClasses.CommandResultInterrupt):
+                        interrupts = [result]
+                        prompts = []
+                        messages = None                    
+                    else: 
+                        interrupts = []
                         prompts = []
                         messages = result
                                 
@@ -330,6 +415,7 @@ class GameRunner:
                 if command.requires_lock:
                     self.is_locked = False    
         
+        new_function.__name__ = f"{command.name}_command"
         new_command = commands.Command(new_function, name=command.name, help=command.help_message)
         
         self.bot.add_command(new_command)             

@@ -335,6 +335,8 @@ class Avalon(DiscordGame):
     
     def reset_game(self):
         
+        self.save_logs()
+        
         for player in self.get_players_in_registry():
             self.reset_player(player)
             
@@ -392,6 +394,17 @@ class Avalon(DiscordGame):
         else:
         
             raise GameExceptions.DiscordGameError("Game in bad game state!")
+    
+    def save_logs(self):
+        
+        log_file = os.path.join(self.temp_dir, "log.txt")
+        
+        with open(log_file, "a+") as log:
+            log.write("================================\n")
+            log.write("missions\n")
+            log.write("\n".join(self.game_board.mission_log))
+            log.write("votes\n")
+            log.write("\n".join(self.game_board.vote_log))
     
     ################################
     #Normal Game Progress Functions#
@@ -1763,4 +1776,17 @@ class Avalon(DiscordGame):
         message += self.game_board.generate_board()
         message.append(self.get_public_player_info())
         message.append(self.get_help_message())
-        return message  
+        return message
+
+    @DiscordGame.command(player=_all_states, help = "send me the logs to whichever player requests them")
+    def send_logs(self, *, DiscordAuthorContext):
+        
+        log_file = os.path.join(self.temp_dir, "log.txt")
+        
+        if os.path.isfile(log_file):
+            player_name = self.controls[str(DiscordAuthorContext)]
+            player = self.get_player_from_name(player_name)
+            return player.create_message_for(text="here are the logs", image = log_file)
+            
+        else:
+            raise GameExceptions.DiscordGameError("There are no logs yet")

@@ -154,13 +154,11 @@ class GameRunner:
                         responses[player_name].add(reaction.emoji)
                         count+=1
                     
-                    description = "\n".join(f"{player.name}: {list(responses[player.name])}" for player in interrupt.players)
+                    description = "\n".join(f"{player.name}: {'|'.join(list(responses[player.name]))}" for player in interrupt.players)
                     interrupt_box = discord.Embed(title = interrupt.title, description = description)
                     await message.edit(embed = interrupt_box)   
             
-            print(interrupt.result_message)
-            
-            description = "\n".join(f"{player.name}: {list(responses[player.name])}" for player in interrupt.players)
+            description = "\n".join(f"{player.name}: {'|'.join(list(responses[player.name]))}" for player in interrupt.players)
             description += f"\n\n{interrupt.result_message}"
             interrupt_box = discord.Embed(title = interrupt.title, description = description)
             await message.edit(embed = interrupt_box)
@@ -273,7 +271,8 @@ class GameRunner:
                 if isinstance(result, (list, tuple)):
                     interrupts = [res for res in result if isinstance(res, games.common.GameClasses.CommandResultInterrupt)]
                     prompts = [res for res in result if isinstance(res, games.common.GameClasses.CommandResultPrompt)]
-                    messages = [res for res in result if not isinstance(res, games.common.GameClasses.CommandResultPrompt)]
+                    messages = [res for res in result if not isinstance(res, (games.common.GameClasses.CommandResultPrompt,
+                                                                              games.common.GameClasses.CommandResultInterrupt))]
                 elif isinstance(result, games.common.GameClasses.CommandResultPrompt):
                     interrupts = []
                     prompts = [result]
@@ -333,7 +332,8 @@ class GameRunner:
                     if isinstance(result, (list, tuple)):
                         interrupts = [res for res in result if isinstance(res, games.common.GameClasses.CommandResultInterrupt)]
                         prompts = [res for res in result if isinstance(res, games.common.GameClasses.CommandResultPrompt)]
-                        messages = [res for res in result if not isinstance(res, games.common.GameClasses.CommandResultPrompt)]
+                        messages = [res for res in result if not isinstance(res, (games.common.GameClasses.CommandResultPrompt,
+                                                                              games.common.GameClasses.CommandResultInterrupt))]
                     elif isinstance(result, games.common.GameClasses.CommandResultPrompt):
                         interrupts = []
                         prompts = [result]

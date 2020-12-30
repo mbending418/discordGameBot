@@ -175,12 +175,9 @@ class CommandResultPrompt:
         if result_message is None:
             result_message = f"You Chose: "
     
-        if count >= len(emojis):
-            raise GameExceptions.DiscordGameError(f"count must be > the number of emoji options: emojis = {emojis} | count = {count}")
-            
-        if dm and count != 1:
-            raise GameExceptions.DiscordGameError(f"DM Prompts can only allow the user to choose 1")
-    
+        if count > len(emojis):
+            raise GameExceptions.DiscordGameError(f"count must be <= the number of emoji options: emojis = {emojis} | count = {count}")
+                
         if len(set(emojis)) < len(emojis):
             raise GameExceptions.DiscordGameError(f"emoji list must contain no duplicates")
     

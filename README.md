@@ -11,6 +11,8 @@ pip install imageio
 
 pip install numpy
 
+pip install emoji
+
 # setup instructions:
 
 In order to actually run this bot you'll need to do the following:

@@ -9,12 +9,14 @@ import discord
 from gameRunner import GameRunner
 from games.avalon.game import Avalon
 from games.rockpaperscissors.game import RockPaperScissors
+from games.coup.game import Coup
 
 TOKEN_FILE = os.path.join("..", "resources", "settings.json")
 COMMAND_PREFIX = "@bot "
 GAMES={
     "Avalon" : Avalon,
-    "RockPaperScissors" : RockPaperScissors
+    "RockPaperScissors" : RockPaperScissors,
+    "Coup" : Coup
 }
 
 with open(TOKEN_FILE, "r") as token_file:
@@ -22,9 +24,7 @@ with open(TOKEN_FILE, "r") as token_file:
     
     TOKEN=settings["TOKEN"]
     
-    LOGGING = settings["LOGGING"]
-    
-    IllegalMoveLog = settings.get("IllegalMoveLog", {})
+    LOGGING = settings.get("LOGGING", {})
 
 bot = commands.Bot(command_prefix=COMMAND_PREFIX)
 threads = {}

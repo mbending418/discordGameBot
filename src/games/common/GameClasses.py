@@ -1,3 +1,4 @@
+import discord
 from emoji import EMOJI_ALIAS_UNICODE as EMOJIS
 
 from . import GameExceptions
@@ -162,20 +163,26 @@ class CommandResultEmbedding:
 
     """
     
-    def __init__(self, title, destination = None, description = None):
+    def __init__(self, title, destination = None, description = None, color=None):
         self.title = title
         self.destination = destination
         self.description = description
+        if color is None:
+            color = discord.Color.default()
+        self.color = color
 
 class CommandResultInterrupt:
 
     """See if any player wants to respond to the current game action"""
     
-    def __init__(self, title, players, func_name, emojis, end_emoji = None, max_responses = None, result_message = "", timeout = 30.0):
+    def __init__(self, title, players, func_name, emojis, end_emoji = None, max_responses = None, result_message = "", timeout = 30.0, color=None):
       
         #default end_emoji
         if end_emoji is None:
             end_emoji = END_EMOJI
+        
+        if color is None:
+            color = discord.Color.default()
         
         self.players = players
         
@@ -187,12 +194,13 @@ class CommandResultInterrupt:
         self.end_emoji = end_emoji
         self.max_responses = max_responses
         self.timeout = timeout
+        self.color = color
 
 class CommandResultPrompt:
 
     """Prompt a Player to make a Selection or Selections"""
 
-    def __init__(self, player, title, func_name, emojis = None, dm = False, count = 1, key = None, description = None, result_message = None, timeout = 30.0):
+    def __init__(self, player, title, func_name, emojis = None, dm = False, count = 1, key = None, description = None, result_message = None, timeout = 30.0, color=None):
         
         if not isinstance(count, int):
             raise GameExceptions.DiscordGameError(f"count for CommandResultPrompt must be of type 'int': type(count) = {type(count)}")
@@ -216,6 +224,9 @@ class CommandResultPrompt:
         if len(set(emojis)) < len(emojis):
             raise GameExceptions.DiscordGameError(f"emoji list must contain no duplicates")
     
+        if color is None:
+            color = discord.Color.default()
+    
         self.player = player
         self.key = key
         self.func_name = func_name        
@@ -231,6 +242,7 @@ class CommandResultPrompt:
         self.emojis = emojis
         self.count = count
         self.timeout = timeout
+        self.color = color
                
 class Player:
     """

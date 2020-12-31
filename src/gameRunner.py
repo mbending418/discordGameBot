@@ -72,7 +72,9 @@ class GameRunner:
                 
                 if command_result.description is not None:
                     kwargs["description"] = command_result.description
-                                        
+                
+                kwargs["color"] = command_result.color
+                
                 embedding = discord.Embed(**kwargs)
                 
                 await destination.send(embed=embedding)
@@ -85,7 +87,7 @@ class GameRunner:
         
         async def prompt_player(default_channel, prompt : games.common.GameClasses.CommandResultPrompt):
             
-            vote_box = discord.Embed(title = prompt.title, description = prompt.description)
+            vote_box = discord.Embed(title = prompt.title, description = prompt.description, color = prompt.color)
             
             channel = prompt.channel
             if channel is None:
@@ -107,7 +109,7 @@ class GameRunner:
                     if prompt.channel is None:
                         await message.remove_reaction(reaction, user)
                 except asyncio.TimeoutError:
-                    timeout_box = discord.Embed(title = prompt.title, description = "Timed out! Please manually make selection with game commands")
+                    timeout_box = discord.Embed(title = prompt.title, description = "Timed out! Please manually make selection with game commands", color=prompt.color)
                     await message.edit(embed = timeout_box)
                     choices = None
                     break
@@ -123,14 +125,14 @@ class GameRunner:
                         current_choices = choices
                         if current_choices == set():
                             current_choices = "None"
-                        choice_box = discord.Embed(title = prompt.title, description = f"Current selection: {current_choices}")
+                        choice_box = discord.Embed(title = prompt.title, description = f"Current selection: {current_choices}", color=prompt.color)
                         await message.edit(embed = choice_box)
                         
             if (choices is not None) and (len(choices) == 1):
                 desc = f"{prompt.result_message} {list(choices)[0]}"
             else:
                 desc = f"{prompt.result_message} {choices}"
-            recorded_box = discord.Embed(title = prompt.title, description = desc)
+            recorded_box = discord.Embed(title = prompt.title, description = desc, color=prompt.color)
             await message.edit(embed = recorded_box)
             
             return (prompt.key, choices)
@@ -140,7 +142,7 @@ class GameRunner:
             responses = {player.name : set() for player in interrupt.players}
             player_map = {player.discord_name : player.name for player in interrupt.players}
             description = "\n".join(f"{player.name}: {list(responses[player.name])}" for player in interrupt.players)
-            interrupt_box = discord.Embed(title = interrupt.title, description = description)
+            interrupt_box = discord.Embed(title = interrupt.title, description = description, color=interrupt.color)
                         
             message = await game_channel.send(embed= interrupt_box)
             for emoji in interrupt.emojis:
@@ -158,7 +160,7 @@ class GameRunner:
                     reaction, user = await self.bot.wait_for("reaction_add", timeout = interrupt.timeout, check = check)
                     await message.remove_reaction(reaction, user)
                 except asyncio.TimeoutError:
-                    timeout_box = discord.Embed(title = interrupt.title, description = "Timed out! Please manually make selection with game commands")
+                    timeout_box = discord.Embed(title = interrupt.title, description = "Timed out! Please manually make selection with game commands", color=interrupt.color)
                     await message.edit(embed = timeout_box)
                     break
                     
@@ -174,12 +176,12 @@ class GameRunner:
                         count+=1
                     
                     description = "\n".join(f"{player.name}: {'|'.join(list(responses[player.name]))}" for player in interrupt.players)
-                    interrupt_box = discord.Embed(title = interrupt.title, description = description)
+                    interrupt_box = discord.Embed(title = interrupt.title, description = description, color=interrupt.color)
                     await message.edit(embed = interrupt_box)   
             
             description = "\n".join(f"{player.name}: {'|'.join(list(responses[player.name]))}" for player in interrupt.players)
             description += f"\n\n{interrupt.result_message}"
-            interrupt_box = discord.Embed(title = interrupt.title, description = description)
+            interrupt_box = discord.Embed(title = interrupt.title, description = description, color=interrupt.color)
             await message.edit(embed = interrupt_box)
             
             return responses

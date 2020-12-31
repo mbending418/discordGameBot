@@ -1600,9 +1600,23 @@ class Coup(DiscordGame):
         
         winning_player = self.get_player_from_name(self.player_order[0])
         
+        #create Game Over message
         title = "Game Over!"
-        description = f"{winning_player.name} is the only player left standing! They win!!!\n\n"
-        description += "Play Again? (use the command: 'restart')"
+        description = f"{winning_player.name} is the only player left standing!"
+        message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
+        
+        #reveal winning hand
+        text = f"{winning_player.name}'s hand:\n"
+        text += "\n".join([card.name for card in winning_player.cards])
+        
+        output_file = os.path.join(self.temp_dir, winning_player.name + ".jpg")
+        utils.merge_image_files([card.card_image for card in winning_player.cards], output_file)
+        
+        message.append(GameClasses.CommandResultMessage(text=text, image = output_file, send_both=True))
+        
+        #create "Play Again?" message
+        title = "Play Again?"
+        description = "(use the command: 'restart')"
         message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
         
         return message
@@ -1746,7 +1760,7 @@ class Coup(DiscordGame):
             return self.ask_for_reaction(message)
         else:
             message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
-            return self.process_steal_successful(message)
+            return self.process_steal_successful(player, message)
      
     def process_steal_successful(self, player, message = None):
         """

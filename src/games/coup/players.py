@@ -34,7 +34,7 @@ class CoupPlayer(GameClasses.Player):
                 
         return count
      
-    def create_card_messages(self, temp_dir):
+    def create_card_messages(self, temp_dir, destination = None):
         text = f"{self.name}'s hand:\n"
         
         if len(self.cards) == 0:

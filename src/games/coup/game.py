@@ -237,18 +237,16 @@ class Coup(DiscordGame):
     
     def generate_board(self):   
 
-        message = "======================================================\n"
-        message += f"Revealed Cards: {[card.name for card in self.revealed_cards]}"        
+        title = "Game Board:"        
         
+        message = f"Revealed Cards: {[card.name for card in self.revealed_cards]}"
         for player_name in self.player_order:
             player = self.get_player_from_name(player_name)
             message += f"\n\n{player.name} | cards: {len(player.cards)} | money: {player.money}"
             if player.has_role("current_player"):
                 message += f"| {self.get_message_symbol('current_player')}"
         
-        message += "\n======================================================\n\n"
-        
-        return GameClasses.CommandResultMessage(text = message)
+        return GameClasses.CommandResultEmbedding(title = title, description = message)
 
     def get_card_from_name(self, card_name):
         
@@ -526,7 +524,7 @@ class Coup(DiscordGame):
         #find the "pass" emoji
         pass_emoji = self._pass_emoji
 
-        title = f"Does anyone wish to block {current_player.name}'s attempt at the action: {self.current_action}?\n"
+        title = f"Does anyone wish to block {current_player.name}'s attempt at '{self.current_action}'?\n\n"
         title += "\n".join([f"Block with {self._option_emojis[emoji]} : {emoji}" for emoji in emojis])
         title += f"\nPass for Everyone: {pass_emoji}"
         
@@ -573,8 +571,9 @@ class Coup(DiscordGame):
         if action in ["coup", "assassinate", "steal"]:
             #if this action requires a target
             self.current_action = action
-            
-            message = [f"{player_name} has chosen: {action}\nNow {player_name} must choose a target for {action}"]
+            title = f"Action: {action}"
+            description = f"{player_name} choose a target for {action}"
+            message = [GameClasses.CommandResultEmbedding(title=title, description=description)]
             message.append(self.create_target_prompt(self.get_player_from_name(player_name)))
             return message
             
@@ -801,12 +800,14 @@ class Coup(DiscordGame):
         player = self.get_player_from_name(player_name)
     
         if len(player.cards) >= 2:
-            message.append(f"{player.name}: Please choose a card to reveal and lose")
             
             if self.enable_buttons:
+                message.append(GameClasses.CommandResultEmbedding(title=f"{player.name} must now reveal and lose a card"))
                 message.append(self.create_lose_influence_prompt(player))
             else:
-                message.append("DM the bot which card you want to reveal and lose: 'reveal [card]'")
+                title=f"{player.name} must now reveal and lose a card"
+                description="DM the bot which card you want to reveal and lose: 'reveal [card]'"
+                message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
                 
                 message.append(player.create_message_for(text = f"{player.name}. Please choose a card to reveal and lose: 'reveal [card]'"))
             
@@ -817,7 +818,10 @@ class Coup(DiscordGame):
         else:
             lost_card = player.cards[0]
             
-            message.append(f"{player.name} only has one card in hand and will therefore automatically reveal it.")
+            title = f"{player.name} must now reveal and lose a card"
+            description = f"{player.name} only has one card in hand and will therefore automatically reveal it"
+            
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             message.append(player.create_message_for(text = f"{player.name}, you only have one card in hand. So you automatically reveal: {lost_card.name}"))
             
             self.interrupt_turn("lose_influence")
@@ -825,16 +829,23 @@ class Coup(DiscordGame):
     
     def ask_for_reaction(self, message = None):
     
+        current_player = self.find_current_player()
+    
         if message is None:
             message = []
     
         if self.enable_buttons and self.enable_interrupts:
             message.append(self.create_reaction_interrupt())
         else:
-            message.append("To react to this move. Use the command: 'reaction [card]'. Where [card] is which card you're responding with: eg. 'reaction ambassador'")
+            title=f"Does anyone wish to block {current_player.name}'s attempt at '{self.current_action}'?"
+            description = "Use the command: 'reaction [card]'. eg. 'reaction ambassador'\n\n"
+        
             if self.current_action == "assassinate" or self.current_action == "steal":
-                message.append(f"Only {self.current_action_target} may react since they're the target of this move")
-            message.append("If no one wants to react. Anyone can use to the command: 'next' to move on.")
+                description += f"(Only {self.current_action_target} may react since they're the target of this move)\n\n"
+            
+            description += "If no one wants to react. Anyone can use to the command: 'next' to move on."
+            
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
         
         self.advance_turn_state("reaction")
         return message
@@ -846,15 +857,35 @@ class Coup(DiscordGame):
                 
         if self.state == "action":
             self.advance_turn_state("challenge")
+            
+            challenged_player = self.find_current_player()
+            
+            if self.current_action == "tax":
+                claimed_card = "duke"
+            elif self.current_action == "assassinate":
+                claimed_card = "assassin"
+            elif self.current_action == "steal":
+                claimed_card = "captain"
+            elif self.current_action == "exchange":
+                claimed_card = "ambassador"
+            else:
+                raise GameExceptions.DiscordGameError(f"Game State Error: cannot challenge {self.current_action}")
+                
         elif self.state == "reaction":
             self.advance_turn_state("reaction_challenge")
+            
+            challenged_player = self.reacting_player
+            claimed_card = self.reacting_player_card
         else:
             raise GameGlasses.DiscordGameError(f"Cannot ask for challenge in game state: {self.state}")
         
         if self.enable_buttons and self.enable_interrupts:
             message.append(self.create_challenge_interrupt())
         else:
-            message.append("To challenge this claim. Use the command: 'challenge'\nOtherwise have a player use the command 'next' to have everyone pass on challenging")
+        
+            title = f"Does anyone wish to challenge {challenged_player.name}'s claim of {claimed_card}?"
+            description = "Use the command: 'challenge' \n\nOtherwise: \nHave a player use the command 'next' to have everyone pass on challenging"
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
         
         return message 
     
@@ -872,7 +903,9 @@ class Coup(DiscordGame):
             if self.enable_buttons:
                 message.append(self.create_reveal_prompt(player, card))
             else:
-                message.append(f"{player.name}: Please reveal a {card} card from your hand; if you cannot, reveal a different card and lose that influence")
+                title = f"{player.name} was challenged!"
+                description = f"{player.name}: Please reveal a card from your hand.\n\nIf you do not reveal a {card}. You will lose that influence"
+                message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
                 message.append(player.create_message_for(text=f"{player.name}: Please reveal a {card} card from your hand; if you cannot, reveal a different card and lose that influence [command = 'reveal [card]']"))
         
             return message
@@ -881,7 +914,11 @@ class Coup(DiscordGame):
         else:
             revealed_card = player.cards[0]
             
-            message.append(f"{player.name} only has one card in hand and will therefore automatically reveal it.")
+            title = f"{player.name} was challenged!"
+            description = f"{player.name} only has one card in hand and will therefore automatically reveal it\n"
+            description += f"{player.name} reveals {revealed_card.name}."
+            
+            message.append(GameClasses.CommandResultEmbedding(title=title,description=description))
             message.append(player.create_message_for(text = f"{player.name}, you only have one card in hand. So you automatically reveal: {revealed_card.name}"))
         
             self.interrupt_turn("reveal")
@@ -895,19 +932,24 @@ class Coup(DiscordGame):
         lost_card = self.get_card_from_name(lost_card_name)
         
         if lost_card not in player.cards:
-            raise GameClasses.DiscordGameIllegalMove(f"{player.name} cannot reveal the chosen card because they don't have one")
+            raise GameExceptions.DiscordGameIllegalMove(f"{player.name} cannot reveal the chosen card because they don't have one")
         
         player.take_cards(lost_card)
         self.revealed_cards.append(lost_card)
-        message += player.create_card_messages()
-        message.append(f"{player.name} loses an influence and reveals: {lost_card.name}")
+        message += player.create_card_messages(self.temp_dir)
+        
+        title = f"{player.name} has lost an influence!"
+        description = f"Revealed card: {lost_card.name}"
+        message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
         
         player.remove_role("active_player")
         
         #if the player who just lost influence loses
         if len(player.cards) == 0:
             
-            message.append(f"{player.name} has lost their last influence and is out of the game!")
+            title = "Player Elimination:"
+            description = f"{player.name} has lost their last influence and is out of the game!"
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             
             if player.has_role("current_player"):
                 #if the current player just lost, pass it to the previous player before removing that player from the player order and processing next turn or ending the game
@@ -982,14 +1024,19 @@ class Coup(DiscordGame):
                 
                 current_player = self.find_current_player()
                 
+                title = "Action Blocked!"
+                
                 if self.current_action == "foreign_aid":
-                    message.append(f"{current_player.name}'s 'Foreign Aid' was blocked by {self.reacting_player.name}'s {self.reacting_player_card}")
+                    description = f"{current_player.name}'s 'Foreign Aid' was blocked by {self.reacting_player.name}'s {self.reacting_player_card}"
+                    message.append(GameClasses.CommandResultEmbedding(title = title, description = description))
                 
                 elif self.current_action == "assassinate":
-                    message.append(f"{current_player.name}'s attempt to 'Assassinate' {self.current_action_target} was blocked by {self.reacting_player.name}'s {self.reacting_player_card}")
+                    description = f"{current_player.name}'s attempt to 'Assassinate' {self.current_action_target} was blocked by {self.reacting_player.name}'s {self.reacting_player_card}"
+                    message.append(GameClasses.CommandResultEmbedding(title = title, description = description))
                     
                 elif self.current_action == "steal":
-                    message.append(f"{current_player.name}'s attempt to 'Steal' from {self.current_action_target} was blocked by {self.reacting_player.name}'s {self.reacting_player_card}")
+                    description = f"{current_player.name}'s attempt to 'Steal' from {self.current_action_target} was blocked by {self.reacting_player.name}'s {self.reacting_player_card}"
+                    message.append(GameClasses.CommandResultEmbedding(title = title, description = description))
                     
                 else:
                     raise GameExceptions.DiscordGameError(f"Game State Error: game_state='lose_influence', turn_state='reaction_challenge', current_action='{self.current_action}' should not be possible")
@@ -1074,17 +1121,19 @@ class Coup(DiscordGame):
         #create a message to each player to let them know their hand
         message = []
         for player in players:
-            message += player.create_card_messages()
+            message += player.create_card_messages(self.temp_dir)
             
-        message.append("Begining Game of Coup!")
+        message.append(GameClasses.CommandResultEmbedding(title="Begining Game of Coup!"))
         message.append(self.generate_board())
-        message.append(f"{first_player.name} it is your turn!")
         
         if self.enable_buttons:
             message.append(self.create_action_prompt(first_player))
         else:
-            message.append("Use the command 'action [action]' to take a game action")
-            message.append(f"Options: {self._all_game_actions}")
+            
+            title = f"{first_player.name} it's your turn:"
+            description = "Use the command 'action [action]' to take a game action\n\n"
+            description += f"Options: {self._all_game_actions}"
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             
             message.append(first_player.create_message_for(text = f"{first_player.name} it's your turn. Please take a game action: 'action [action]'"))
             
@@ -1106,7 +1155,6 @@ class Coup(DiscordGame):
         next_player.give_role("current_player")
         
         message.append(self.generate_board())
-        message.append(f"{next_player.name} it is your turn!")
         
         self.advance_turn_state("action")
         
@@ -1121,8 +1169,11 @@ class Coup(DiscordGame):
         if self.enable_buttons:
             message.append(self.create_action_prompt(next_player))
         else:
-            message.append("Use the command 'action [action]' to take a game action")
-            message.append(f"Options: {self._all_game_actions}")
+
+            title = f"{next_player.name} it's your turn:"
+            description = "Use the command 'action [action]' to take a game action\n\n"
+            description += f"Options: {self._all_game_actions}"
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             
             message.append(next_player.create_message_for(text = f"{next_player.name} it's your turn. Please take a game action: 'action [action]'"))
                 
@@ -1175,8 +1226,10 @@ class Coup(DiscordGame):
             if target is not None:
                 
                 raise GameExceptions.DiscordGameIllegalMove("Cannot have a target for move 'tax': ex. 'action tax'")
-                
-            message = [f"{player_name} is attempting to 'Tax' with their Duke. Does anyone wish to challenge them having a Duke?"]
+            
+            title = f"Action: Tax"
+            description = f"{player_name} is attempting to 'Tax' with their Duke"
+            message = [GameClasses.CommandResultEmbedding(title=title, description = description)]
                         
             return self.ask_for_challenge(message)
             
@@ -1194,7 +1247,9 @@ class Coup(DiscordGame):
             
                 raise GameExceptions.DiscordGameIllegalMove(f"You don't have enough money to 'assassinate': requires 3")
             
-            message = [f"{player_name} is attempting to 'Assassinate' {target} with their Assassin. Does anyone wish to challenge them having an Assassin?"]
+            title = f"Action: Assassinate"
+            description = f"{player_name} is attempting to 'Assassinate' {target} with their Assassin."
+            message = [GameClasses.CommandResultEmbedding(title=title, description=description)]
                         
             return self.ask_for_challenge(message)
             
@@ -1208,8 +1263,10 @@ class Coup(DiscordGame):
             
                 raise GameExceptions.DiscordGameIllegalMove(f"Player not found: {target}")
             
-            message = [f"{player_name} is attempting to 'Steal' from {target} with their Captain. Does anyone wish to challenge them having a Captain?"]
-                        
+            title = "Action: Steal"
+            description = f"{player_name} is attempting to 'Steal' from {target} with their Captain."
+            message = [GameClasses.CommandResultEmbedding(title=title, description=description)]
+            
             return self.ask_for_challenge(message)
             
         elif action == "exchange":
@@ -1218,8 +1275,10 @@ class Coup(DiscordGame):
                 
                 raise GameExceptions.DiscordGameIllegalMove("Cannot have a target for move 'exchange': ex. 'action exchange'")
                 
-            message = [f"{player_name} is attempting to 'Exchange' with their Ambassador. Does anyone wish to challenge them having an Ambassador?"]
-
+            title = "Action: Exchange"
+            description = f"{player_name} is attempting to 'Exchange' with their Ambassador"
+            message = [GameClasses.CommandResultEmbedding(title=title, description=description)]
+            
             return self.ask_for_challenge(message)
             
         else:
@@ -1236,23 +1295,32 @@ class Coup(DiscordGame):
             if self.turn_state == "challenge":
                 #if it's an action that was not challenged then the action resolves
                 
+                title = "No Challenge!"
+                
                 if self.current_action == "tax":
-                    message = [f"No one chose to challenge {current_player.name}'s claim of having a Duke."]
+                    description = f"No one chose to challenge {current_player.name}'s claim of having a Duke."
+                    message = [GameClasses.CommandResultEmbedding(title=title, description=description)]
                     self.return_from_turn_interrupt()
                     return self.process_tax(current_player, message)
                 
                 elif self.current_action == "assassinate":
-                    message = [f"No one chose to challenge {current_player.name}'s claim of having an Assassin"]
+                    title = "No Challenge!"
+                    description = f"No one chose to challenge {current_player.name}'s claim of having an Assassin."
+                    message = [GameClasses.CommandResultEmbedding(title=title, description=description)]
                     self.return_from_turn_interrupt()
                     return self.process_assassinate_attempt(current_player, message)    
                     
                 elif self.current_action == "steal":
-                    message = [f"No one chose to challenge {current_player.name}'s claim of having an Captain"]
+                    title = "No Challenge!"
+                    description = f"No one chose to challenge {current_player.name}'s claim of having a Captain."
+                    message = [GameClasses.CommandResultEmbedding(title=title, description=description)]
                     self.return_from_turn_interrupt()
                     return self.process_steal_attempt(current_player, message)
                     
                 elif self.current_action == "exchange":
-                    message = [f"No one chose to challenge {current_player.name}'s claim of having an Ambassador"]
+                    title = "No Challenge!"
+                    description = f"No one chose to challenge {current_player.name}'s claim of having an Ambassador."
+                    message = [GameClasses.CommandResultEmbedding(title=title, description=description)]
                     self.return_from_turn_interrupt()
                     return self.process_exchange_action(current_player, message)
                     
@@ -1262,8 +1330,29 @@ class Coup(DiscordGame):
             elif self.turn_state == "reaction_challenge":
                 #if it's a reaction that was NOT challenged then the reaction successfully blocks the action and we move on to the next turn
                 
-                message = [f"No one chose to challenge {self.reacting_player.name}'s claim of having {self.reacting_player_card}"]
-                message.append(f"{current_player.name}'s attempt at the action '{self.current_action}' is blocked.")
+                title = "No Challenge!"
+                description = f"No one chose to challenge {self.reacting_player.name}'s claim of having {self.reacting_player_card}"
+                message = [GameClasses.CommandResultEmbedding(title=title, description=description)]
+                
+                title = "Action Blocked!"
+                
+                if self.current_action == "foreign_aid":
+                    description = f"{current_player.name}'s 'Foreign Aid' was blocked by {self.reacting_player.name}'s {self.reacting_player_card}"
+                    message.append(GameClasses.CommandResultEmbedding(title = title, description = description))
+                
+                elif self.current_action == "assassinate":
+                    description = f"{current_player.name}'s attempt to 'Assassinate' {self.current_action_target} was blocked by {self.reacting_player.name}'s {self.reacting_player_card}"
+                    message.append(GameClasses.CommandResultEmbedding(title = title, description = description))
+                    
+                elif self.current_action == "steal":
+                    description = f"{current_player.name}'s attempt to 'Steal' from {self.current_action_target} was blocked by {self.reacting_player.name}'s {self.reacting_player_card}"
+                    message.append(GameClasses.CommandResultEmbedding(title = title, description = description))
+                    
+                else:
+                    raise GameExceptions.DiscordGameError(f"Game State Error: game_state='lose_influence', turn_state='reaction_challenge', current_action='{self.current_action}' should not be possible")
+                                
+                #description = f"{current_player.name}'s attempt at the action '{self.current_action}' is blocked."
+                #message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
                 
                 self.return_from_turn_interrupt()
                 return self.process_next_turn(message)
@@ -1303,7 +1392,10 @@ class Coup(DiscordGame):
     
         self.challenging_player = self.get_player_from_name(player_name)
     
-        message = [f"{self.challenging_player.name} is challenging {challenged_player.name}'s claim of having '{claimed_card}'."]
+        title = "Challenge!"
+        description = f"{self.challenging_player.name} is challenging {challenged_player.name}'s claim of having '{claimed_card}'."
+    
+        message = [GameClasses.CommandResultEmbedding(title=title,description=description)]
             
         return self.ask_for_reveal(challenged_player, claimed_card, message)
     
@@ -1313,19 +1405,24 @@ class Coup(DiscordGame):
             #if there was not a reaction to the current action
             
             current_player = self.find_current_player()
-                
+
+            title = "No Block!"
+            
             if self.current_action == "foreign_aid":
-                message = [f"No one chose to try and block {current_player.name}'s foreign aid"]
+                description = f"No one chose to try and block {current_player.name}'s foreign aid"
+                message = [GameClasses.CommandResultEmbedding(title=title)]
                 self.return_from_turn_interrupt()
                 return self.process_foreign_aid_successful(current_player, message)
                 
             elif self.current_action == "assassinate":
-                message = [f"No one chose to try and block {current_player.name}'s attempt to assassinate"]
+                description = f"No one chose to try and block {current_player.name}'s attempt to assassinate {self.current_action_target}"
+                message = [GameClasses.CommandResultEmbedding(title=title)]
                 self.return_from_turn_interrupt()
                 return self.process_assassinate_successful(current_player, message)
                     
             elif self.current_action == "steal":
-                message = [f"No one chose to try and block {current_player.name}'s attempt to steal"]
+                description = f"No one chose to try and block {current_player.name}'s attempt to steal from {self.current_action_target}"
+                message = [GameClasses.CommandResultEmbedding(title=title)]
                 self.return_from_turn_interrupt()
                 return self.process_steal_successful(current_player, message)
                     
@@ -1336,13 +1433,16 @@ class Coup(DiscordGame):
         self.reacting_player = self.get_player_from_name(player_name)
         self.reacting_player_card = card
     
+        title = "Block Attempted!"
+    
         if self.current_action == "foreign_aid":
         
             if player_name == self.find_current_player().name:
                 raise GameExceptions.DiscordGameIllegalMove(f"{player_name}: You cannot block your own attempt at 'foreign_aid'")
         
             if card == "duke":
-                message = [f"{player_name} is attempting to block 'foreign aid'. Claiming they have a Duke"]
+                description = f"{player_name} is attempting to block 'foreign aid'. Claiming they have a Duke"
+                message = [GameClasses.CommandResultEmbedding(title=title)]
             else:
                 raise GameExceptions.DiscordGameIllegalMove(f"Cannot block 'foreign aid' with {card}")
         
@@ -1352,7 +1452,8 @@ class Coup(DiscordGame):
                 raise GameExceptions.DiscordGameIllegalMove(f"Cannot block 'assassinate' unless you're the target of the assassination attempt")
         
             if card == "contessa":
-                message = [f"{player_name} is attempting to block an 'assassination' attempt. Claiming they have a Contessa"]
+                description = f"{player_name} is attempting to block an 'assassination' attempt. Claiming they have a Contessa"
+                message = [GameClasses.CommandResultEmbedding(title=title)]
             else:
                 raise GameExceptions.DiscordGameIllegalMove(f"Cannot block 'assassinate' with {card}")
         
@@ -1362,9 +1463,11 @@ class Coup(DiscordGame):
                 raise GameExceptions.DiscordGameIllegalMove(f"Cannot block 'steal' unless you're the target of the steal attempt")
     
             if card == "captain":
-                message = [f"{player_name} is attempting to block a 'steal' attempt. Claiming they have a Captain"]
+                description = f"{player_name} is attempting to block a 'steal' attempt. Claiming they have a Captain"
+                message = [GameClasses.CommandResultEmbedding(title=title)]
             elif card == "ambassador":
-                message = [f"{player_name} is attempting to block a 'steal' attempt. Claiming they have an Ambassador"]
+                description = f"{player_name} is attempting to block a 'steal' attempt. Claiming they have an Ambassador"
+                message = [GameClasses.CommandResultEmbedding(title=title)]
             else:
                 raise GameExceptions.DiscordGameIllegalMove(f"Cannot block 'steal' with {card}")
     
@@ -1414,11 +1517,15 @@ class Coup(DiscordGame):
         
         player.remove_role("active_player")
         
-        message.append(f"{player.name} claimed to have {claimed_card} and revealed {card}.\n")
         if claimed_card == card:
             #if the claimed card matches the revealed card
             
-            message.append(f"This matches the claimed card and {self.challenging_player.name} will now lose an influence")
+            title = "Challenged Failed!"
+            description = f"{player.name} claimed to have {claimed_card} and revealed {card}.\n\n"
+            description += f"{player.name}'s {claimed_card} has been shuffled back into the deck and they've been dealt a new card\n\n"
+            description += f"{self.challenging_player.name} will now lose an influence"
+            
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             
             #shuffle the revealed card back into the deck
             removed_card = self.get_card_from_name(card)
@@ -1431,15 +1538,16 @@ class Coup(DiscordGame):
             player.give_cards(*drawn_cards)
             
             #send the player a DM letting them know what their new hand is
-            message += player.create_card_messages()
+            message += player.create_card_messages(self.temp_dir)
         
-            message.append(f"{player.name}'s {claimed_card} has been shuffled back into the deck and they've been dealt a new card")
-            
             return self.lose_influence(self.challenging_player.name, message)
         else:
             #if the claimed card does NOT match the claimed card
+            title = "Challenge Successful!"
+            description = f"{player.name} claimed to have {claimed_card} and revealed {card}.\n\n"
+            description = f"This does NOT match the claimed card and {player.name} will now lose this influence"
             
-            message.append(f"This does NOT match the claimed card {player.name} will now lose this influence")
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
         
             return self.process_lost_influence(player = player, lost_card_name = card, message = message)
      
@@ -1462,13 +1570,16 @@ class Coup(DiscordGame):
         #remove the two exchanged cards from the player and send DM's to the player letting them know their new hand
         player.take_cards(card_1, card_2)
         message = [player.create_message_for(text = f"You returned {card_1_name} and {card_2_name} to the court deck")]
-        message += player.create_card_messages()
-        message.append(f"{player.name} returned 2 cards to the court deck")
+        message += player.create_card_messages(self.temp_dir)
+        
+        title = "Action: Exchange"
+        description = f"{player.name} returned 2 cards to the court deck\n\n"
+        description += "The court deck has been shuffled!"
+        message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
         
         #return the two exchanged cards to the deck and shuffle it
         self.deck.add_to_deck([card_1, card_2])
         self.deck.shuffle()
-        message.append("The court deck has been shuffled")
         
         return self.process_next_turn(message)
             
@@ -1489,7 +1600,10 @@ class Coup(DiscordGame):
         
         winning_player = self.get_player_from_name(self.player_order[0])
         
-        message.append(f"GAME OVER\n{winning_player.name} is the only player left standing! They win!!!\n Play Again? (use the command: 'restart')")
+        title = "Game Over!"
+        description = f"{winning_player.name} is the only player left standing! They win!!!\n\n"
+        description += "Play Again? (use the command: 'restart')"
+        message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
         
         return message
             
@@ -1503,7 +1617,10 @@ class Coup(DiscordGame):
             message = []
             
         player.money += 1
-        message.append(f"{player.name} took 'Income' and gained 1 coin")
+        
+        title = "Action: Income"
+        description = f"{player.name} took 'Income' and gained 1 coin"
+        message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             
         return self.process_next_turn(message)
     
@@ -1517,8 +1634,10 @@ class Coup(DiscordGame):
         if message is None:
             message = []
     
-        message = [f"{player.name} is attempting to collect 'Foreign Aid'. Does anyone wish to block this action with their Duke?"]
-                        
+        title = "Action: Foreign Aid"
+        description = f"{player.name} is attempting to collect 'Foreign Aid'"
+        message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
+          
         return self.ask_for_reaction(message)
     
     def process_foreign_aid_successful(self, player, message = None):
@@ -1526,7 +1645,10 @@ class Coup(DiscordGame):
             message = []
             
         player.money += 2
-        message.append(f"{player.name} took 'Foreign Aid' and gained 2 coins")
+        
+        title = "Action: Foreign Aid"
+        description = f"{player.name} took 'Foreign Aid' and gained 2 coins"
+        message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
         
         self.return_from_turn_interrupt()
         
@@ -1535,11 +1657,14 @@ class Coup(DiscordGame):
     def process_coup(self, player, message = None):
         if message is None:
             message = []
-        
-        message.append(f"{player.name} pays 7 coins in order to take the action: 'coup'")
+               
         player.money -= 7
         
-        message.append(f"{player.name} has 'couped' {self.current_action_target}.")    
+        title = "Action: Coup"
+        description = f"{player.name} pays 7 coins to 'Coup'\n\n"
+        description += f"{player.name} as 'couped' {self.current_action_target}."
+        message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
+        
         return self.lose_influence(self.current_action_target, message)
     
     def process_tax(self, player, message = None):
@@ -1547,7 +1672,10 @@ class Coup(DiscordGame):
             message = []
             
         player.money += 3
-        message.append(f"{player.name} 'Taxed' and gained 3 coins")
+        
+        title = "Action: Tax"
+        description = f"{player.name} 'Taxed' and gained 3 coins"
+        message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             
         return self.process_next_turn(message)
         
@@ -1561,14 +1689,19 @@ class Coup(DiscordGame):
         if message is None:
             message = []
                 
-        message.append(f"{player.name} pays 3 coins in order to take the action: 'assassinate'")
         player.money -= 3
         
+        title = "Action: Assassinate"
+        description = f"{player.name} pays 3 coins to 'Assassinate'\n\n"
+        description += f"{player.name} is attempting to 'assassinate' {self.current_action_target}.\n"
+        
         if self.current_action_target in self.player_order:
-            message.append(f"{player.name} is attempting to 'assassinate' {self.current_action_target}.\n{self.current_action_target} do you wish to block this action with a Contessa?")
+            description += f"{self.current_action_target} may now attempt to block with a Contessa"
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             return self.ask_for_reaction(message)
         else:
-            message.append(f"{player.name} is attempting to 'assassinate' {self.current_action_target}.\nHowever, that player is already out of the game so nothing happends")
+            description += f"However, {self.current_action_target} is already out of the game so nothing happens."
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             return self.process_next_turn(message)
     
     def process_assassinate_successful(self, player, message = None):
@@ -1578,17 +1711,20 @@ class Coup(DiscordGame):
         
         if message is None:
             message = []
-            
-        message.append(f"{player.name} is assassinating {self.current_action_target}.")
         
+        title = "Action: Assassinate"
+        description = f"{player.name} 'Assassinates' {self.current_action_target}"
+
         self.return_from_turn_interrupt()
         self.advance_turn_state("action")
         self.interrupt_turn("lose_influence")
         
         if self.current_action_target not in self.player_order:
-            message.append("However, that player is already out of the game so nothing happends")
+            description += f"\n\nHowever, {self.current_action_target} is already out of the game so nothing happens"
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             return self.process_next_turn(message)
-        else:        
+        else:
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             return self.lose_influence(self.current_action_target, message)  
     
     def process_steal_attempt(self, player, message = None):
@@ -1600,10 +1736,17 @@ class Coup(DiscordGame):
     
         if message is None:
             message = []
-                
-        message.append(f"{player.name} is attempting to 'steal' from {self.current_action_target}.\n {self.current_action_target} do you wish to block this action with a Captain/Ambassador?")    
+            
+        title = "Action: Steal"
+        description = f"{player.name} is attempting to 'steal' from {self.current_action_target}.\n\n"
         
-        return self.ask_for_reaction(message)
+        if self.current_action_target in self.player_order:
+            description += f"{self.current_action_target} may now attempt to block with a Captain or Ambassador."
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
+            return self.ask_for_reaction(message)
+        else:
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
+            return self.process_steal_successful(message)
      
     def process_steal_successful(self, player, message = None):
         """
@@ -1612,41 +1755,51 @@ class Coup(DiscordGame):
         
         if message is None:
             message = []
-                
+        
+        title = "Action: Steal"
+        description = f"{player.name} is stealing from {self.current_action_target}.\n\n"
+        
         target_player = self.get_player_from_name(self.current_action_target)
         if target_player.money < 2:
-            message.append(f"{target_player.name} only has {target_player.money} coin(s) so only that amount will be stolen")
+            description = f"{target_player.name} only has {target_player.money} coin(s) so only that amount will be stolen\n\n"
             steal_amount = target_player.money
         else:
             steal_amount = 2
+            description = ""
         
-        message.append(f"{player.name} is stealing {steal_amount} coin(s) from {self.current_action_target}.")
+        description += f"{player.name} stole {steal_amount} coin(s) from {self.current_action_target}."
         
         player.money += steal_amount
         if self.current_action_target not in self.player_order:
-            message.append("However, that player is already out of the game so they don't lose any money")
+            description += "\n\nHowever, that player is already out of the game so they don't lose any money"
         else:
             target_player.money -= steal_amount
-         
+
+        message.append(GameClasses.CommandResultEmbedding(title=title,description=description))
+     
         self.return_from_turn_interrupt()
-         
         return self.process_next_turn(message)
+     
      
     def process_exchange_action(self, player, message = None):
         if message is None:
             message = []
-            
-        message.append(f"{player.name} is performing the action: exchange\n{player.name} draws 2 cards from the court deck and now must return 2 cards from their hand to the court deck")
+        
+        title = "Action: Exchange"
+        description = f"{player.name} is performing the action: exchange\n\n"
+        description += f"{player.name} draws 2 cards from the court deck and now must return 2 cards from their hand to the court deck"
         
         new_cards = self.deck.draw(number=2)
         player.give_cards(*new_cards)
         
-        message += player.create_card_messages()
+        message += player.create_card_messages(self.temp_dir)
         
         if self.enable_buttons:
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             message.append(self.create_exchange_prompt(player))
         else:
-            message.append(f"{player.name}: please DM the bot the command 'exchange [card_1] [card_2]' to return [card_1] and [card_2] to the deck")           
+            description += f"\n\n{player.name}: please DM the bot the command 'exchange [card_1] [card_2]' to return [card_1] and [card_2] to the deck"
+            message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
             message.append(player.create_message_for(text = f"{player.name}: Use the command 'exchange [card_1] [card_2]' to return [card_1] and [card_2] to the deck"))
         
         self.advance_turn_state("exchange")
@@ -1818,22 +1971,23 @@ class Coup(DiscordGame):
             for card in self._all_cards:
                 cheat_sheet.append(f"Character: {card.name} | Action: {card.action} | Effect: {card.effect} | Reaction: {card.reaction}")
             
-            message = "Rule Cheat Sheet:\n(If 10+ coins you must choose Coup Action during your turn)\n\n"
-            message += "\n".join(cheat_sheet)
+            title = "Rule Cheat Sheet:\n(If 10+ coins you must choose Coup Action during your turn)"
+            message = "\n\n".join(cheat_sheet)
             
-            return GameClasses.CommandResultMessage(text = message, destination = DiscordChannelContext)
+            return GameClasses.CommandResultEmbedding(title = title, description = message, destination = DiscordChannelContext)
             
         elif category == "options":
         
-            message = ["Options Enabled:"]
+            title = "Options Enabled:"
+            message = []
             if self.enable_emojis:
-                message.append("     Emojis in Game Messages")
+                message.append("Emojis in Game Messages")
             if self.enable_buttons:
-                message.append("     Button Prompts for Game Actions")
+                message.append("Button Prompts for Game Actions")
             if self.enable_buttons and self.enable_interrupts:
-                message.append("     Button Prompts for Game Interrupts (Challenging/Blocking)")
+                message.append("Button Prompts for Game Interrupts (Challenging/Blocking)")
                 
-            return GameClasses.CommandResultMessage(text = "\n".join(message), destination = DiscordChannelContext)
+            return GameClasses.CommandResultEmbedding(title=title, description = "\n\n".join(message), destination = DiscordChannelContext)
             
         elif category == "my_info":
         
@@ -1842,7 +1996,7 @@ class Coup(DiscordGame):
             else:
                 player_name = self.controls[str(DiscordAuthorContext)]
                 player = self.get_player_from_name(player_name)
-                return player.create_card_messages()
+                return player.create_card_messages(self.temp_dir)
                 
         else:
             raise GameExceptions.DiscordGameIllegalMove(f"check option '{category}' not recognized")
@@ -1853,11 +2007,12 @@ class Coup(DiscordGame):
         message = []
                 
         #add enable rules
-        message.append("Enable/Disable-able Rules:")
+        title = "Enable/Disable-able Rules:"
+        message = []
         for option, info in self._all_enable_rules.items():
             message.append(f"\nrule : '{option}' | options: 'enable' 'disable' | description: {info['description']}")
             
-        return GameClasses.CommandResultMessage(destination = DiscordChannelContext, text = "\n".join(message))         
+        return GameClasses.CommandResultEmbedding(title=title, destination = DiscordChannelContext, description = "\n".join(message))
     
     @DiscordGame.command(player=["new_game"], help="change a game option (ex. change_option button_prompts enable)")
     def change_option(self, option, value):

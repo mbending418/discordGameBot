@@ -1,4 +1,7 @@
+import os
+
 from ..common import GameClasses
+from ..common import utils
 
 class CoupPlayer(GameClasses.Player):
 
@@ -31,16 +34,18 @@ class CoupPlayer(GameClasses.Player):
                 
         return count
      
-    def create_card_messages(self):
+    def create_card_messages(self, temp_dir):
+        text = f"{self.name}'s hand:\n"
+        
         if len(self.cards) == 0:
-            return [self.create_message_for(text = "You have no cards in hand and you are out of the game!")]
+            return [GameClasses.CommandResultMessage(destination = self.discord_channel, text=text + "\nYou have no cards in hand and you are out of the game!")]
         
-        text = f"{self.name}: Your cards in hand are:\n" + "\n".join([card.name for card in self.cards])
-        message = [self.create_message_for(text = text, image = self.cards[0].get_card_image(), send_both = True)]
+        text += "\n".join([card.name for card in self.cards])
         
-        if len(self.cards) > 1:
-            message += [self.create_message_for(image = card.get_card_image()) for card in self.cards[1:]]
-            
-        return message
+        output_file = os.path.join(temp_dir, self.name + ".jpg")
+        utils.merge_image_files([card.card_image for card in self.cards], output_file)
+        
+        return [GameClasses.CommandResultMessage(destination=self.discord_channel, text=text, image = output_file, send_both=True)]
+        
         
         

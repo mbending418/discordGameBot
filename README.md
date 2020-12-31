@@ -88,5 +88,7 @@ The following commands are currently supported by the bot (these can be checked 
 
 Avalon : based off of the board game "The Resistance: Avalon"
 
+Coup: Based of the board game "Coup"
+
 RockPaperScissors: The childrens game (useful as a simple example game and to familiarize yourself with how everything works)
   

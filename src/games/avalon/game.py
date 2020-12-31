@@ -353,10 +353,13 @@ class Avalon(DiscordGame):
         private_info = player.private_info
         return private_info   
         
-    def get_public_player_info(self):
+    def get_public_player_info(self, destination = None):
         player_objects = [self.get_player_from_name(player_name) for player_name in self.player_order]        
         player_info = [f"{player.player_id} | {player.public_info[0]} | {player.public_info[1]}" for player in player_objects]
-        return "\n".join(player_info)
+        
+        title = "Players"
+        description = "\n\n".join(player_info)
+        return GameClasses.CommandResultEmbedding(title=title, description=description, destination=destination)
     
     def find_team_leader(self):
         team_leaders = [player for player in self.get_players_in_registry() if player.has_role('leader')]
@@ -369,31 +372,35 @@ class Avalon(DiscordGame):
             
         return team_leaders[0]
     
-    def get_help_message(self):
+    def get_help_message(self, destination = None):
+    
+        title = "Avalon Bot:"
     
         if self.state == "new_game":
-            return "\nEveryone join and select the rules!"    
+            description = "Everyone join and select the rules!"
         
         elif self.state == "team_select":
-            for player in self.get_players_in_registry():
-                if player.has_role("leader"):
-                    return f"\n{player.name} please choose {self.game_board.get_current_mission_count()} players for the mission [command: 'choose <player>']"
+            player = self.find_team_leader()
+            description = f"{player.name} please choose {self.game_board.get_current_mission_count()} players for the mission [command: 'choose <player>']"
             
         elif self.state == "voting":
-            return "\nEveryone vote approve or reject on the current mission! (Preferebly secretly) [command: 'vote approve' or 'vote reject']"
+            description = "Everyone vote approve or reject on the current mission! (Preferebly secretly) [command: 'vote approve' or 'vote reject']"
             
         elif self.state == "mission":
-            return f"\n{', '.join([player.name for player in self.on_mission])} please select pass or fail [command: 'mission pass' of 'mission fail']"
+            description = f"{', '.join([player.name for player in self.on_mission])} please select pass or fail [command: 'mission pass' of 'mission fail']"
         
         elif self.state == "stab":
-            return "\nThree Missions have Passed!\nAssassin please try to stab Merlin"
+            description = "Three Missions have Passed!\n\nAssassin please try to stab Merlin"
         
         elif self.state == "game_end":
-            return f"\n{self.winning_team}\n Play Again?"
+            description = f"{self.winning_team}\n\n Play Again?"
+            description += "\n[command: 'next' or 'restart']"
             
         else:
         
             raise GameExceptions.DiscordGameError("Game in bad game state!")
+    
+        return GameClasses.CommandResultEmbedding(title=title, description=description, destination=destination)
     
     def save_logs(self):
         
@@ -619,7 +626,11 @@ class Avalon(DiscordGame):
             dm_message += f"     [command: 'vote approve' or 'vote reject']"
         
             message += [player.create_message_for(text = f"{player.name}: {dm_message}") for player in self.get_players_in_registry()]    
-            message.append(self.get_public_player_info())        
+        
+        ###########################
+        #Display the Current Board#   
+        ###########################
+        message.append(self.get_public_player_info())        
         
         ################################################################
         #Move to 'voting', add the help message, and return the message#
@@ -688,7 +699,7 @@ class Avalon(DiscordGame):
         team_leader = self.find_team_leader()        
         
         #create a vote log of how everyone voted and add that to the vote log and message
-        vote_log = f"================================\nMISSION {self.game_board.current_mission + 1}\n"
+        vote_log = f"MISSION {self.game_board.current_mission + 1}\n"
         vote_log += f"Vote Track: {self.game_board.vote_track}\n"
         vote_log += f"Team Leader: {team_leader.name}\n"
         vote_log += f"Team: {[player.name for player in self.on_mission]}\n\n"
@@ -699,7 +710,9 @@ class Avalon(DiscordGame):
         self.game_board.vote_log.append(vote_log)
         
         #start add the vote log to the message
-        message.append(vote_log)
+        title = "Vote Summary:"
+        description = vote_log
+        message.append(GameClasses.CommandResultEmbedding(title=title, description=description))
         
         #remove all the votes from each player
         for player in players:
@@ -716,7 +729,7 @@ class Avalon(DiscordGame):
             #######################
             
             #mission approved message
-            message.append("\nMISSION APPROVED\n")
+            message.append(GameClasses.CommandResultEmbedding(title="Mission Approved"))
             
             #assign the 'team' role to everyone on the mission
             for mission_player in self.on_mission:
@@ -770,7 +783,7 @@ class Avalon(DiscordGame):
             #######################
             
             #mission rejected message
-            message.append("\nMISSION REJECTED\n")
+            message.append(GameClasses.CommandResultEmbedding(title="Mission Rejected"))
             
             #check to see if the game is over due to the vote track being at 5
             if self.game_board.vote_track >= 5:
@@ -892,7 +905,7 @@ class Avalon(DiscordGame):
         team_leader = self.find_team_leader()       
                 
         #log the mission and player information
-        mission_info = [f"================================\nMISSION {self.game_board.current_mission + 1}"]
+        mission_info = [f"MISSION {self.game_board.current_mission + 1}"]
         mission_info += [f"Team Leader: {team_leader.name}"]
         mission_info += [f"Team: {[player.name for player in self.on_mission]}"]
         
@@ -909,13 +922,15 @@ class Avalon(DiscordGame):
         msg_image = os.path.join(self.temp_dir, file_name)
 
         #create mission log message
-        mission_log = GameClasses.CommandResultMessage(text = msg_text, image = msg_image, send_both=True)
+        mission_log_image = GameClasses.CommandResultMessage(image = msg_image)
+        mission_log_text =  GameClasses.CommandResultEmbedding(title = "Mission Summary:", description = msg_text)
         
         #Log Mission Results
         self.game_board.mission_log.append(msg_text)
         
         #Display Mission results
-        message.append(mission_log)
+        message.append(mission_log_image)
+        message.append(mission_log_text)
         
         ########################
         #Process Mission Result#
@@ -926,7 +941,7 @@ class Avalon(DiscordGame):
             #Mission Failed Path#
             #####################
             
-            message.append("\nMISSION FAILED!\n")
+            message.append(GameClasses.CommandResultEmbedding("Mission Failed!"))
             self.game_board.set_mission_results(self.game_board.current_mission, self.game_board._fail_token)
             self.game_board.failed_mission_count += 1
             
@@ -935,7 +950,7 @@ class Avalon(DiscordGame):
             #Mission Passed Path#
             #####################
     
-            message.append("\nMISSION PASSED!\n")
+            message.append(GameClasses.CommandResultEmbedding("Mission Passed!"))
             self.game_board.set_mission_results(self.game_board.current_mission, self.game_board._pass_token)
             self.game_board.passed_mission_count += 1
  
@@ -1129,21 +1144,24 @@ class Avalon(DiscordGame):
         merlin = merlins[0]
          
         #let everyone know who the stab choice was
-        message = [f"\n{assassin_name} stabbed {guess}"]
+        title = "Assassin Stab:"
+        description =f"{assassin_name} stabbed {guess}"
          
         if guess == merlin:
             #Case: Merlin was Stabbed
         
-            message.append(f"\n{guess} was Merlin!\n")
+            description += f"\n{guess} was Merlin!"
             
             self.winning_team = "Merlin was stabbed! Team Evil wins!"
             
         else:
             #Case: Merline was not Stabbed!!
-            message.append(f"\n{guess} was NOT Merlin! {merlin} was!\n")
+            description += f"\n{guess} was NOT Merlin! {merlin} was!"
             
             self.winning_team = "Merlin was NOT Stabbed! Team Good wins!"
-            
+        
+        message = [GameClasses.CommandResultEmbedding(title=title, description=description)]
+        
         #add people's characters to the public info cache
         for player in players:
             player.public_info = [self.get_message_symbol(player.character.team), player.character.name]
@@ -1396,7 +1414,7 @@ class Avalon(DiscordGame):
             
                 self.reset_game()
                 self.state = "new_game"
-                return ["New Game!\n", self.get_public_player_info(), self.get_help_message()]
+                return [GameClasses.CommandResultEmbedding(title="New Game!"), self.get_public_player_info(), self.get_help_message()]
             
             else:
         
@@ -1464,7 +1482,7 @@ class Avalon(DiscordGame):
             return self.game_board.generate_board(channel = DiscordChannelContext)
         
         elif category == "players":
-            return GameClasses.CommandResultMessage(text = self.get_public_player_info(), destination = DiscordChannelContext)
+            return self.get_public_player_info(destination = DiscordChannelContext)
             
         elif category == "rules":
             #special characters
@@ -1472,10 +1490,10 @@ class Avalon(DiscordGame):
             
             message.append("")
             if self.enable_mission_log:
-                message.append("'check mission_log' is enabled")
+                message.append("check mission_log is enabled")
                
             if self.enable_vote_log:
-                message.append("'check vote_log' is enabled")
+                message.append("check vote_log is enabled")
                 
             if self.enable_auto_next:
                 message.append("Auto Next is enabled")
@@ -1486,7 +1504,7 @@ class Avalon(DiscordGame):
             if self.enable_button_prompts:
                 message.append("Use of Button Prompts to take Game Actions is Enabled!")
             
-            return GameClasses.CommandResultMessage(destination = DiscordChannelContext, text = "\n".join(message))
+            return GameClasses.CommandResultEmbedding(title = "Special Characters/Settings Enabled:", destination = DiscordChannelContext, description = "\n".join(message))
         
         elif category == "my_info":
             player_name = self.controls[str(DiscordAuthorContext)]
@@ -1496,7 +1514,7 @@ class Avalon(DiscordGame):
         
         elif category == "help":
             
-            return GameClasses.CommandResultMessage(destination = DiscordChannelContext, text = self.get_help_message())
+            return self.get_help_message(destination=DiscordChannelContext)
       
         elif category == "mission_log":
         
@@ -1508,7 +1526,12 @@ class Avalon(DiscordGame):
                     
                 else:
                 
-                    return [GameClasses.CommandResultMessage(destination = DiscordChannelContext, text = log) for log in self.game_board.mission_log]
+                    mission_logs = [GameClasses.CommandResultEmbedding(title = f"Mission Log: Mission {i+1}", destination = DiscordChannelContext, description = log) for i, log in enumerate(self.game_board.mission_log[1:])]
+                    
+                    if len(mission_logs) == 0:
+                        return GameClasses.CommandResultEmbedding(title = "Mission Log:", description = "There are no Mission Logs yet", destination = DiscordChannelContext)
+                    else:
+                        return mission_logs
                     
             else:
             
@@ -1524,8 +1547,12 @@ class Avalon(DiscordGame):
                     
                 else:
                 
-                    return [GameClasses.CommandResultMessage(destination = DiscordChannelContext, text = log) for log in self.game_board.vote_log]
+                    vote_logs = [GameClasses.CommandResultEmbedding(title = "Vote Log:", destination = DiscordChannelContext, description = log) for log in self.game_board.vote_log[1:]]
                     
+                    if len(vote_logs) == 0:
+                        return GameClasses.CommandResultEmbedding(title = "Vote Log:", description = "There are no Vote Logs yet", destination = DiscordChannelContext)
+                    else:
+                        return vote_logs
             else:
             
                 raise GameExceptions.DiscordGameIllegalMove("Checking the Vote Log is not enabled")
@@ -1540,7 +1567,7 @@ class Avalon(DiscordGame):
         
         message = [f"{command.name} | {command.help_message} | {roles}" for command, roles in commands.items()]
         
-        return GameClasses.CommandResultMessage(destination = DiscordChannelContext, text = "\n".join(message))
+        return GameClasses.CommandResultEmbedding(title = "Command Available: ", destination = DiscordChannelContext, description = "\n".join(message))
     
     @DiscordGame.command(user=["new_game"], help="print the rule options (for change_rule)")
     def rule_options(self, *, DiscordChannelContext):
@@ -1559,7 +1586,7 @@ class Avalon(DiscordGame):
         for rule, info in self._all_enable_rules.items():
             message.append(f"rule : '{rule}' | options: 'enable' 'disable' | description: {info['description']}")
             
-        return GameClasses.CommandResultMessage(destination = DiscordChannelContext, text = "\n".join(message))         
+        return GameClasses.CommandResultEmbedding(title = "Options Available:", destination = DiscordChannelContext, description = "\n".join(message))         
     
     @DiscordGame.command(player=["new_game"], help="change a game rule (ex. change_rule Merlin add)")
     def change_rule(self, rule, value):
@@ -1736,48 +1763,6 @@ class Avalon(DiscordGame):
         
         return self.process_stab(self.controls[str(DiscordAuthorContext)], guess)
         
-        #TO BE DELETED:    
-        
-        players = self.get_players_in_registry()       
-        
-        #find merlin
-        merlins = [player.name for player in players if player.character.name == "Merlin"]
-        if len(merlins) == 0:
-            raise GameExceptions.DiscordGameError("Somehow there's no Merlin???")
-        elif len(merlins) == 1:
-            pass
-        else:
-            raise GameExceptions.DiscordGameError("Somehow there's more than one Merlin???")
-        
-        merlin = merlins[0]
-         
-        #let everyone know who the stab choice was
-        message = [f"\n{self.controls[str(DiscordAuthorContext)]} stabbed {guess}"]
-         
-        if guess == merlin:
-            #Case: Merlin was Stabbed
-        
-            message.append(f"\n{guess} was Merlin!\n")
-            
-            self.winning_team = "Merlin was stabbed! Team Evil wins!"
-            
-        else:
-            #Case: Merline was not Stabbed!!
-            message.append(f"\n{guess} was NOT Merlin! {merlin} was!\n")
-            
-            self.winning_team = "Merlin was NOT Stabbed! Team Good wins!"
-            
-        #add people's characters to the public info cache
-        for player in players:
-            player.public_info = [self.get_message_symbol(player.character.team), player.character.name]
-               
-        #move to the game end state
-        self.state="game_end"
-        message += self.game_board.generate_board()
-        message.append(self.get_public_player_info())
-        message.append(self.get_help_message())
-        return message
-
     @DiscordGame.command(player=_all_states, help = "send me the logs to whichever player requests them")
     def send_logs(self, *, DiscordAuthorContext):
         

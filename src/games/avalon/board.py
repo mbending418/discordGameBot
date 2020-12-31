@@ -94,19 +94,22 @@ class GameBoard():
         main_text = "\n".join(self.generate_mission_info())
         main_image = os.path.join(self.temp_dir, CURRENT_BOARD_IMAGE)
     
+        result = []
+    
+        result.append(GameClasses.CommandResultEmbedding(title = "Board Summary:", description=main_text, destination = channel))
+    
         if os.path.isfile(main_image):
-            main_board = GameClasses.CommandResultMessage(text=main_text, image=main_image, send_both=True, destination = channel)
-        else:
-            main_board = GameClasses.CommandResultMessage(text=main_text, destination = channel)
+            result.append(GameClasses.CommandResultMessage(image=main_image, destination = channel))
         
         sub_board_info = [
             "Vote Track: " + str(self.vote_track),
             "Player Count: " + str(self.player_count),
             "Number of Evil Players: " + str(self.get_team_evil_count())]
         
-        sub_board = GameClasses.CommandResultMessage(text="\n".join(sub_board_info), destination = channel)
         
-        return [main_board, sub_board]
+        result.append(GameClasses.CommandResultEmbedding(title = "Board Summary:", description="\n".join(sub_board_info), destination = channel))
+        
+        return result
     
     def render_board(self):
     

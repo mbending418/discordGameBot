@@ -126,12 +126,47 @@ class CommandResultMessage:
         Send the 'text' content if there is no image sent or if 'send_both' is set to True
     """
     
-    def __init__(self, destination = None, text = "", image = None, send_both = False):
+    def __init__(self, destination = None, text = None, image = None, send_both = False):
         self.destination = destination
         self.text = text
         self.image = image
         self.send_both = send_both
+
+class CommandResultEmbedding:
+    """
+    An object used for sending results back for a DiscordGame Command but in an embedding. 
+    
+    The GameRunner knows to take any "CommandResultEmbedding" or List containing "CommandResultEmbeddings"
+    returned by a DiscordGame Command and use it to send a message
+    
+    (Context refers to a Discord.Context object. It realy just needs a .send method which can send stuff to it on discord. be it an author, channel, etc)
+    
+    Contructors:
+       
+    __init__(self, title : str, destination : Context, description : str)
+    
+        destination (Context) : What Discord.Context object this message should be sent to. If None the GameRunner will use the default location. Usually the Channel the bot was made in.
         
+        title (str): The title of the embeddded bo
+        
+        description (str): The description in the embedded box
+    
+    How to Use:
+    
+    If you set the 'destination' field, the GameRunner will send this message to that whatever Discord.Context object.
+    Otherwise it will just send it to the default location, usualy the Channel that started the bot
+    
+    The title field needs to be set
+    
+    The description field defaults to None
+
+    """
+    
+    def __init__(self, title, destination = None, description = None):
+        self.title = title
+        self.destination = destination
+        self.description = description
+
 class CommandResultInterrupt:
 
     """See if any player wants to respond to the current game action"""

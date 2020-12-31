@@ -55,9 +55,28 @@ class GameRunner:
                     
                 if (not self.use_images) or (command_result.image is None) or (command_result.send_both):
                     kwargs["content"] = command_result.text
+                    if kwargs["content"] is None:
+                        kwargs["content"] = "."
                     
                 await destination.send(**kwargs)
+             
+            elif isinstance(command_result, games.common.GameClasses.CommandResultEmbedding):
+
+                destination =  command_result.destination
+                if destination is None:
+                    destination = game_channel
+
+                kwargs = {}
                 
+                kwargs["title"] = command_result.title
+                
+                if command_result.description is not None:
+                    kwargs["description"] = command_result.description
+                                        
+                embedding = discord.Embed(**kwargs)
+                
+                await destination.send(embed=embedding)
+             
             elif isinstance(command_result,(list,tuple)):
                 [await process_command_result(game_channel, cr) for cr in command_result]
                 

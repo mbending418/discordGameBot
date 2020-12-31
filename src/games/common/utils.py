@@ -1,4 +1,14 @@
+import numpy as np
+import imageio  
 import os
+
+def merge_image_files(image_files, output_file):
+
+    images = [imageio.imread(f) for f in image_files]
+    
+    output_image = np.concatenate(images, axis=1)
+    
+    imageio.imsave(output_file, output_image)
 
 def generate_temp_dir(temp_base):
     """

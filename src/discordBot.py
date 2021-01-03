@@ -39,7 +39,7 @@ def validate_prefix(main_prefix, new_prefix):
 async def on_ready():
     print(f'{bot.user.name} has connected to Discord!')
 
-@bot.command(name='roll', help="Simulates rolling dice. To roll 4 d20 input: roll 5 20")
+@bot.command(name='roll', help="Simulates rolling dice. To roll 4 d20 use: roll 5 20")
 async def roll(ctx, number_of_dice: int, number_of_sides: int):
     
     title = "Dice Roller:"
@@ -259,6 +259,25 @@ async def display_permissions(ctx, server = None):
     
     await ctx.send(embed=embedding)
  
+async def display_subscribers(ctx):
+
+    with open (SUBS_FILE, 'r') as subs_file:
+        subs_dict = json.load(subs_file)
+        
+    display_dict = {}
+    for user, option in subs_dict.items():
+        
+        discord_user = await ctx.guild.fetch_member(user)
+        
+        if discord_user is not None:
+            display_dict[str(discord_user)] = option
+        
+    title = "Bot Subscribers:"
+    description = "\n\n".join([f"{user} : {option}" for user,option in display_dict.items()])
+    embedding = discord.Embed(title=title, description=description, color=discord.Color.gold())
+    
+    await ctx.send(embed=embedding)
+ 
 @bot.command(name="Admin", help="Run Administrator Commands (Use Admin with no args to get options)")
 async def admin_commands(ctx, *args):
         
@@ -379,6 +398,16 @@ async def admin_commands(ctx, *args):
         
         else:
             await display_permissions(ctx, server)
+    
+    elif command == "Subscribers":
+        
+        if has_permission(user):
+            
+            await display_subscribers(ctx)
+            
+        else:
+            
+            await ctx.send(f"Admin Perimssion Denied: {user} doesn't have Bot Level Permissions")
     
     else:
         await ctx.send(f"Admin Error: Admin command not found: {command}")

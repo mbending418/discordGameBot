@@ -303,6 +303,7 @@ async def admin_commands(ctx, *args):
             description += "Admin Remove <user> : Remove all of <user>'s Bot Admin Permissions\n\n"
             description += "Admin Remove master : Remove <user>'s Entire Bot Admin Permission\n\n"
             description += "Admin Permissions : Check to see all Bot Admin Permissions\n\n"
+            description += "Admin Subscribers : Check all the subscribers to the bot\n\n"
         description += "Admin Add <user> <server> : Give <user> Bot Admin Permissions for the server <server>\n\n"
         description += "Admin Remove <user> <server> : Remove <user>'s Bot Admin Permissions for the server <server>\n\n"
         description += "Admin Permissions <server> : Display all users with Bot Admin Permissions on server <server>\n\n"

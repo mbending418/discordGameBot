@@ -1,3 +1,5 @@
 resources/temp*
 resources/settings.json
+resources/admin.json
+resources/subscribers.json
 *__pycache__*

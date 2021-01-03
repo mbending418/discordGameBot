@@ -14,7 +14,7 @@ from games.coup.game import Coup
 SETTINGS_FILE = os.path.join("..", "resources", "settings.json")
 ADMIN_FILE = os.path.join("..","resources","admin.json")
 SUBS_FILE = os.path.join("..","resources","subscribers.json")
-COMMAND_PREFIX = "bot: "
+COMMAND_PREFIX = "gamebot: "
 GAMES={
     "Avalon" : Avalon,
     "RockPaperScissors" : RockPaperScissors,
@@ -277,7 +277,7 @@ async def admin_commands(ctx, *args):
     if command is None:
         title = "Administrator Commands:"
         description = "Admin Kill Game [Game_ID] : kills game with Game ID = [Game_ID]\n\n"
-        if has_permissions(user, "master"):
+        if has_permission(user, "master"):
             description += "Admin Kill Bot : kills the Bot (fails if any games are running)\n\n"
             description += "Admin Kill Bot Force : kills the Bot, closing all games first\n\n"
             description += "Admin Add <user> master : make <user> a Bot Admin for entire Bot\n\n"

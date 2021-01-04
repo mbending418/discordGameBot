@@ -421,8 +421,11 @@ async def send_alerts(ctx, option, title, description):
     embedding = discord.Embed(title=title, description=description, color=discord.Color.gold())
 
     for user, sub in subs_dict.items():
-                
-        destination = await ctx.guild.fetch_member(user)
+               
+        try:
+            destination = await ctx.guild.fetch_member(user)
+        except:
+            destination = None
         
         if (destination is not None) and (sub == option or sub == "all"):
             
@@ -436,7 +439,7 @@ async def subscribe(ctx, option):
     allowed_options = {
        "games" : "Whenever a game is started on a Server you are on,  the Game Bot will DM you", 
        "announcements" : "Whenever an announcement by the Bot is made on a Server you are on, the Game Bt will DM you", 
-       "all" : "Whenever a game is started or an announcement by the Bot is made on a Server you are on, the Game Bt will DM you"
+       "all" : "Whenever a game is started or an announcement by the Bot is made on a Server you are on, the Game Bot will DM you"
     }
     
     with open(SUBS_FILE, 'r') as subs_file:

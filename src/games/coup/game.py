@@ -139,7 +139,7 @@ class Coup(DiscordGame):
     _pass_emoji = EMOJIS[":x:"]
     _number_emojis = [EMOJIS[f":{key}:"] for key in ["one","two","three","four","five","six","seven","eight", "nine", "ten"]]
     
-    _interrupt_timeout = 30.0 #Give them 30 seconds to challenge or respond
+    _interrupt_timeout = 60.0 #Give them 30 seconds to challenge or respond
     _prompt_timeout = 120.0 #Give them 2 min to make a decision
     
     _all_enable_rules = {
@@ -167,6 +167,10 @@ class Coup(DiscordGame):
     
     }
     
+    _default_hand_size = 2
+    _default_deck_size = 3
+    _default_starting_money = 2
+    
     def __init__(self, debug):
         self.debug = debug
     
@@ -186,8 +190,11 @@ class Coup(DiscordGame):
         self.enable_emojis = True
         self.enable_buttons = True
         self.enable_interrupts = True
+        
+        self.hand_size = self._default_hand_size
+        self.deck_size = self._default_deck_size
+        self.starting_money = self._default_starting_money
 
-            
     def validate_player_name(self, player_name):
     
         character_whitelist = "abcdefghijklmnopqrstuvwxyz0123456789"
@@ -1091,16 +1098,20 @@ class Coup(DiscordGame):
     
         players = self.get_players_in_registry()
         player_count = len(players)
-        if player_count < 3:
+        
+        #calculate max player count based on deck size
+        max_player_count = ((5 * self.deck_size) - 3)//(self.hand_size)
+        
+        if player_count < 2:
             raise GameExceptions.DiscordGameIllegalMove(f"Need at least 3 players to start! There are currently: {player_count}")
-        if player_count > 6:
-            raise GameExceptions.DiscordGameIllegalMove(f"Max player count is 6! There are currently: {player_count}")
+        if player_count > max_player_count:
+            raise GameExceptions.DiscordGameIllegalMove(f"Max player count is {max_player_count}! There are currently: {player_count}")
     
-        self.deck = CommonGamePieces.DeckOfCards(cards = list(self._all_cards + self._all_cards + self._all_cards))
+        self.deck = CommonGamePieces.DeckOfCards(cards = list(self._all_cards * self.deck_size))
         for player in players:
-            hand = self.deck.draw(2)
+            hand = self.deck.draw(self.hand_size)
             player.give_cards(*hand)
-            player.money = 2
+            player.money = self.starting_money
         
         self.player_order = [player.name for player in players]
         random.shuffle(self.player_order)
@@ -1964,7 +1975,7 @@ class Coup(DiscordGame):
         
         return self.process_exchange_cards(player_name, card_1, card_2)
     
-    @DiscordGame.command(player=_all_states, help="options: board, rules, options, my_info")
+    @DiscordGame.command(player=_all_states, help="options: board, players, rules, options, my_info")
     def check(self, category, *, DiscordAuthorContext, DiscordChannelContext):
     
         category = category.lower()
@@ -1974,7 +1985,14 @@ class Coup(DiscordGame):
                 return GameClasses.CommandResultMessage(text = "NEW GAME", destination = DiscordChannelContext)
             else:
                 return self.generate_board()
-                
+            
+        elif category == "players":
+            
+            title = "Registered Players:"
+            description = "\n\n".join(f"{player.discord_name} : {player.name}" for player in self.get_players_in_registry())
+            
+            return GameClasses.CommandResultEmbedding(title = title, description = description, destination = DiscordChannelContext)
+        
         elif category == "rules":
             
             cheat_sheet = []
@@ -1992,6 +2010,14 @@ class Coup(DiscordGame):
             
         elif category == "options":
         
+            title = "Starting Options:"
+            message = []
+            message.append(f"hand_size : {self.hand_size} | Each player starts {self.hand_size} cards")
+            message.append(f"deck_size : {self.deck_size} | The deck starts with {self.deck_size} of each card")
+            message.append(f"starting_money = {self.starting_money} | Each player starts with {self.starting_money} coins")
+            
+            starting_options = GameClasses.CommandResultEmbedding(title=title, description = "\n\n".join(message), destination = DiscordChannelContext)
+        
             title = "Options Enabled:"
             message = []
             if self.enable_emojis:
@@ -2001,7 +2027,9 @@ class Coup(DiscordGame):
             if self.enable_buttons and self.enable_interrupts:
                 message.append("Button Prompts for Game Interrupts (Challenging/Blocking)")
                 
-            return GameClasses.CommandResultEmbedding(title=title, description = "\n\n".join(message), destination = DiscordChannelContext)
+            enabled_options = GameClasses.CommandResultEmbedding(title=title, description = "\n\n".join(message), destination = DiscordChannelContext)
+            
+            return [starting_options, enabled_options]
             
         elif category == "my_info":
         
@@ -2018,15 +2046,23 @@ class Coup(DiscordGame):
     @DiscordGame.command(user=["new_game"], help="print the rule options (for change_rule)")
     def all_options(self, *, DiscordChannelContext):
         
+        #add starting options
+        title = "Starting Options:"
         message = []
-                
+        message.append(f"option : hand_size | options : [int] | description : how many cards each player starts with | default = {self._default_hand_size}")
+        message.append(f"option : deck_size | options : [int] | description : how many copies of each card go in the starting deck | default = {self._default_deck_size}")
+        message.append(f"option : starting_money | options : [int] | description : how much money each player starts with| default = {self._default_starting_money}")
+        starting_options = GameClasses.CommandResultEmbedding(title=title, destination = DiscordChannelContext, description = "\n\n".join(message))
+      
         #add enable rules
         title = "Enable/Disable-able Rules:"
         message = []
         for option, info in self._all_enable_rules.items():
-            message.append(f"\nrule : '{option}' | options: 'enable' 'disable' | description: {info['description']}")
+            message.append(f"option : '{option}' | options: 'enable' 'disable' | description: {info['description']}")
             
-        return GameClasses.CommandResultEmbedding(title=title, destination = DiscordChannelContext, description = "\n".join(message))
+        enable_options =  GameClasses.CommandResultEmbedding(title=title, destination = DiscordChannelContext, description = "\n\n".join(message))
+        
+        return [starting_options,enable_options]
     
     @DiscordGame.command(player=["new_game"], help="change a game option (ex. change_option button_prompts enable)")
     def change_option(self, option, value):
@@ -2059,11 +2095,53 @@ class Coup(DiscordGame):
                 raise GameExceptions.DiscordGameError(f"Option dictionary misconfigured for option: {option}")
                 
             return message
-                
+        
+        elif option == "hand_size":
+        
+            if value == "default":
+                value = self._default_hand_size
+
+            value = int(value)
+            if value < 2:
+                raise GameExceptions.DiscordGameError(f"Starting hand size cannot be less than 2: {value}")
+            if value > 8:
+                raise GameExceptions.DiscordGameError(f"Starting hand size cannot be bigger than 8: {value}")
+            else:
+                self.hand_size = value
+                return f"Changing starting hand size to {value}"
+        
+        elif option == "deck_size":
+        
+            if value == "default":
+                value = self._default_deck_size
+
+            value = int(value)
+            if value < 3:
+                raise GameExceptions.DiscordGameError(f"Starting deck size cannot be less than 3 copies of each card: {value}")
+            if value > 40:
+                raise GameExceptions.DiscordGameError(f"Starting deck size cannot be bigger than 40 copies of each card: {value}")
+            else:
+                self.deck_size = value
+                return f"Changing starting deck size to {value} copies of each card"
+        
+        elif option == "starting_money":
+        
+            if value == "default":
+                value = self._default_starting_money
+ 
+            value = int(value)
+            if value <0:
+                raise GameExceptions.DiscordGameError(f"Starting money cannot be less than 0: {value}")
+            if value > 10:
+                raise GameExceptions.DiscordGameError(f"Starting money size cannot be bigger than 10: {value}")
+            else:
+                self.starting_money = value
+                return f"Changing starting money amount to {value}"
+        
         else:
         
-            raise GameExceptions.DiscordGameIllegalMove(f"Rule not recognized: {rule}")
-    
+            raise GameExceptions.DiscordGameIllegalMove(f"Optin not recognized: {option}")
+        
     @DiscordGame.command(player = _all_states, help = "print out all secert information", debug = True)
     def cheat(self):
     
